@@ -18,7 +18,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 export const MemberList: React.FC = () => {
-  const { activeTenant, user: currentUser, memberships: myMemberships } = useAuth();
+  const { activeTenant, user: currentUser, memberships: myMemberships, session } = useAuth();
   const [members, setMembers] = useState<any[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,27 +69,35 @@ export const MemberList: React.FC = () => {
     if (!activeTenant || !currentUser) return;
     
     setInviting(true);
-    const { data, error } = await supabase
-      .from('invitations')
-      .insert([
-        { 
-          email: inviteEmail, 
-          role: inviteRole, 
-          tenant_id: activeTenant.id,
-          invited_by: currentUser.id
-        }
-      ])
-      .select();
+    try {
+      const response = await fetch('/api/invitations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({
+          email: inviteEmail,
+          role: inviteRole,
+          tenantId: activeTenant.id
+        })
+      });
 
-    if (!error && data) {
-      setInvitations([data[0], ...invitations]);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Error sending invitation');
+      }
+
+      setInvitations([result.invitation, ...invitations]);
       setIsModalOpen(false);
       setInviteEmail('');
       setInviteRole('student');
-    } else {
-      alert(error?.message || 'Error sending invitation');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setInviting(false);
     }
-    setInviting(false);
   };
 
   const updateRole = async (memberId: string) => {
