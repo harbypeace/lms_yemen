@@ -1,0 +1,5 @@
+{
+  "name": "Nexus LMS",
+  "description": "A robust, multi-tenant Learning Management System built with React and Supabase, supporting School Admins, Teachers, Parents, and Students.",
+  "requestFramePermissions": []
+}
