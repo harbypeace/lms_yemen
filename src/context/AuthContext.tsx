@@ -65,17 +65,75 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       if (profileRes.data) setProfile(profileRes.data);
       
-      if (membershipRes.error) {
-        console.error('Error fetching memberships:', membershipRes.error);
-      }
-      if (membershipRes.data) {
-        const userMemberships = membershipRes.data;
-        setMemberships(userMemberships);
-        
-        // Auto-select first tenant if none active
-        if (userMemberships.length > 0) {
-          setActiveTenant(userMemberships[0].tenants);
+      let userMemberships = membershipRes.data || [];
+
+      // Auto-enroll in General tenant if no memberships exist
+      if (userMemberships.length === 0) {
+        console.log('No memberships found, checking for General tenant...');
+        // 1. Find or create General tenant
+        let { data: generalTenant } = await supabase
+          .from('tenants')
+          .select('*')
+          .eq('slug', 'general')
+          .single();
+
+        if (!generalTenant) {
+          console.log('General tenant not found, creating it...');
+          const { data: newTenant, error: createError } = await supabase
+            .from('tenants')
+            .insert([{ name: 'General', slug: 'general' }])
+            .select()
+            .single();
+          
+          if (createError) {
+            console.error('Error creating General tenant:', createError);
+          } else {
+            generalTenant = newTenant;
+          }
         }
+
+        if (generalTenant) {
+          console.log('Enrolling user in General tenant...');
+          const isDefaultAdmin = user?.email === 'lms_yemen@outlook.com';
+          const { data: newMembership, error: enrollError } = await supabase
+            .from('memberships')
+            .insert([{ 
+              user_id: userId, 
+              tenant_id: generalTenant.id, 
+              role: isDefaultAdmin ? 'super_admin' : 'student'
+            }])
+            .select('*, tenants(*)')
+            .single();
+
+          if (enrollError) {
+            console.error('Error enrolling in General tenant:', enrollError);
+          } else if (newMembership) {
+            userMemberships = [newMembership];
+          }
+        }
+      } else {
+        // Check if we need to upgrade lms_yemen@outlook.com to super_admin in general tenant
+        const generalMembership = userMemberships.find(m => m.tenants.slug === 'general');
+        if (generalMembership && user?.email === 'lms_yemen@outlook.com' && generalMembership.role !== 'super_admin') {
+          console.log('Upgrading lms_yemen@outlook.com to super_admin in General tenant...');
+          const { data: updatedMembership, error: updateError } = await supabase
+            .from('memberships')
+            .update({ role: 'super_admin' })
+            .eq('id', generalMembership.id)
+            .select('*, tenants(*)')
+            .single();
+          
+          if (!updateError && updatedMembership) {
+            userMemberships = userMemberships.map(m => m.id === updatedMembership.id ? updatedMembership : m);
+          }
+        }
+      }
+
+      setMemberships(userMemberships);
+      
+      // Auto-select first tenant if none active
+      if (userMemberships.length > 0) {
+        setActiveTenant(userMemberships[0].tenants);
       }
     } catch (error) {
       console.error('Unexpected error in fetchUserData:', error);

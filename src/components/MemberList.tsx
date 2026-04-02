@@ -37,7 +37,7 @@ export const MemberList: React.FC = () => {
   const [apiLoading, setApiLoading] = useState(false);
 
   const myRole = myMemberships.find(m => m.tenant_id === activeTenant?.id)?.role;
-  const isAdmin = myRole === 'school_admin';
+  const isAdmin = myRole === 'super_admin' || myRole === 'school_admin';
 
   useEffect(() => {
     if (activeTenant) {
@@ -237,6 +237,7 @@ export const MemberList: React.FC = () => {
                             <option value="student">Student</option>
                             <option value="teacher">Teacher</option>
                             <option value="school_admin">School Admin</option>
+                            <option value="super_admin">Super Admin</option>
                             <option value="parent">Parent</option>
                           </select>
                         ) : (
@@ -370,16 +371,17 @@ export const MemberList: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
-                  >
-                    <option value="student">Student</option>
-                    <option value="teacher">Teacher</option>
-                    <option value="school_admin">School Admin</option>
-                    <option value="parent">Parent</option>
-                  </select>
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    >
+                      <option value="student">Student</option>
+                      <option value="teacher">Teacher</option>
+                      <option value="school_admin">School Admin</option>
+                      <option value="super_admin">Super Admin</option>
+                      <option value="parent">Parent</option>
+                    </select>
                 </div>
                 <div className="flex gap-3 pt-4">
                   <button

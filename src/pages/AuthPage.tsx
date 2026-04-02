@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { LogIn, UserPlus, Mail, Lock, Loader2, GraduationCap, User } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
 
 export const AuthPage: React.FC = () => {
+  const { user, loading: authLoading } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [isStudentLogin, setIsStudentLogin] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -17,7 +19,7 @@ export const AuthPage: React.FC = () => {
   useEffect(() => {
     // Heartbeat to check for session (fallback for popup communication)
     const heartbeat = setInterval(async () => {
-      if (!loading && !user) {
+      if (!authLoading && !user) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           console.log('Heartbeat detected session, reloading...');
@@ -28,7 +30,7 @@ export const AuthPage: React.FC = () => {
     }, 2000);
 
     return () => clearInterval(heartbeat);
-  }, [user, loading]);
+  }, [user, authLoading]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();

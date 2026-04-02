@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, 
   BookOpen, 
@@ -8,20 +9,32 @@ import {
   LogOut, 
   GraduationCap,
   ChevronRight,
-  School
+  School,
+  Menu,
+  X,
+  Building2,
+  ChevronDown
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { CourseList } from '../components/CourseList';
 import { MemberList } from '../components/MemberList';
 import { ProgressTracker } from '../components/ProgressTracker';
 import { ParentDashboard } from '../components/ParentDashboard';
 import { PermissionsDebugger } from '../components/PermissionsDebugger';
+import { SchoolManagement } from '../components/SchoolManagement';
 import { cn } from '../lib/utils';
 
 export const Dashboard: React.FC = () => {
-  const { profile, activeTenant, memberships, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'members' | 'progress' | 'children'>('dashboard');
+  const { profile, activeTenant, memberships, setActiveTenant, signOut } = useAuth();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'members' | 'progress' | 'children' | 'schools'>('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
+
+  const handleTabChange = (tab: any) => {
+    setActiveTab(tab);
+    setIsMobileMenuOpen(false);
+  };
 
   const stats = [
     { label: 'Active Courses', value: '12', icon: BookOpen, color: 'bg-blue-500' },
@@ -31,42 +44,65 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/50 z-40 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
-        <div className="p-6 border-b border-slate-200">
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold">
               N
             </div>
             <span className="font-bold text-xl text-slate-900">Nexus</span>
           </div>
+          <button 
+            className="md:hidden text-slate-500 hover:bg-slate-100 p-2 rounded-lg"
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           <SidebarItem 
             icon={LayoutDashboard} 
             label="Dashboard" 
             active={activeTab === 'dashboard'} 
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => handleTabChange('dashboard')}
+          />
+          <SidebarItem 
+            icon={Building2} 
+            label="Schools" 
+            active={activeTab === 'schools'} 
+            onClick={() => handleTabChange('schools')}
           />
           <SidebarItem 
             icon={BookOpen} 
             label="Courses" 
             active={activeTab === 'courses'} 
-            onClick={() => setActiveTab('courses')}
+            onClick={() => handleTabChange('courses')}
           />
           <SidebarItem 
             icon={Users} 
             label="Members" 
             active={activeTab === 'members'} 
-            onClick={() => setActiveTab('members')}
+            onClick={() => handleTabChange('members')}
           />
           {activeRole === 'student' && (
             <SidebarItem 
               icon={GraduationCap} 
               label="My Progress" 
               active={activeTab === 'progress'} 
-              onClick={() => setActiveTab('progress')}
+              onClick={() => handleTabChange('progress')}
             />
           )}
           {activeRole === 'parent' && (
@@ -74,7 +110,7 @@ export const Dashboard: React.FC = () => {
               icon={Users} 
               label="My Children" 
               active={activeTab === 'children'} 
-              onClick={() => setActiveTab('children')}
+              onClick={() => handleTabChange('children')}
             />
           )}
           <SidebarItem icon={Settings} label="Settings" />
@@ -92,27 +128,98 @@ export const Dashboard: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <header className="bg-white border-b border-slate-200 p-6 flex items-center justify-between sticky top-0 z-10">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">
-              {activeTab === 'dashboard' ? `Welcome back, ${profile?.full_name?.split(' ')[0] || 'User'}!` : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
-            </h2>
-            <div className="flex items-center gap-2 text-slate-500 text-sm mt-1">
-              <School className="w-4 h-4" />
-              <span>{activeTenant?.name || 'No School Selected'}</span>
-              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                {activeRole || 'No Role'}
-              </span>
+      <main className="flex-1 overflow-y-auto w-full">
+        <header className="bg-white border-b border-slate-200 p-4 md:p-6 flex items-center justify-between sticky top-0 z-10">
+          <div className="flex items-center gap-3">
+            <button 
+              className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setIsTenantMenuOpen(!isTenantMenuOpen)}
+                className="flex items-center gap-2 text-left group"
+              >
+                <div>
+                  <h2 className="text-xl md:text-2xl font-bold text-slate-900 truncate max-w-[150px] sm:max-w-xs md:max-w-none">
+                    {activeTab === 'dashboard' ? `Welcome back, ${profile?.full_name?.split(' ')[0] || 'User'}!` : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+                  </h2>
+                  <div className="flex items-center gap-2 text-slate-500 text-xs md:text-sm mt-1">
+                    <School className="w-3 h-3 md:w-4 md:h-4 hidden sm:block" />
+                    <span className="truncate max-w-[100px] sm:max-w-none">{activeTenant?.name || 'No School Selected'}</span>
+                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase tracking-wider hidden sm:block">
+                      {activeRole || 'No Role'}
+                    </span>
+                    <ChevronDown className={cn("w-3 h-3 transition-transform", isTenantMenuOpen && "rotate-180")} />
+                  </div>
+                </div>
+              </button>
+
+              <AnimatePresence>
+                {isTenantMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setIsTenantMenuOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute left-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-20 overflow-hidden"
+                    >
+                      <div className="p-3 border-b border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3">Switch Institution</span>
+                      </div>
+                      <div className="p-2 space-y-1">
+                        {memberships.map((membership) => (
+                          <button
+                            key={membership.tenant_id}
+                            onClick={() => {
+                              setActiveTenant(membership.tenants);
+                              setIsTenantMenuOpen(false);
+                            }}
+                            className={cn(
+                              "w-full text-left p-3 rounded-xl transition-all flex items-center justify-between group",
+                              activeTenant?.id === membership.tenant_id ? "bg-indigo-50 text-indigo-600" : "hover:bg-slate-50 text-slate-700"
+                            )}
+                          >
+                            <div>
+                              <div className="font-bold text-sm">{membership.tenants.name}</div>
+                              <div className="text-[10px] uppercase font-bold opacity-60">{membership.role}</div>
+                            </div>
+                            {activeTenant?.id === membership.tenant_id && (
+                              <div className="w-2 h-2 bg-indigo-600 rounded-full" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border-2 border-white shadow-sm">
+          <div className="flex items-center gap-2 md:gap-4">
+            <button
+              onClick={async () => {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.access_token) {
+                  navigator.clipboard.writeText(session.access_token);
+                  alert('JWT Access Token copied to clipboard!');
+                } else {
+                  alert('No active session found.');
+                }
+              }}
+              className="hidden sm:block text-xs font-semibold text-slate-500 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 px-3 py-1.5 rounded-full transition-colors"
+            >
+              Copy JWT
+            </button>
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-slate-200 overflow-hidden border-2 border-white shadow-sm shrink-0">
               {profile?.avatar_url ? (
                 <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-indigo-100 text-indigo-600 font-bold">
+                <div className="w-full h-full flex items-center justify-center bg-indigo-100 text-indigo-600 font-bold text-sm md:text-base">
                   {profile?.full_name?.[0] || 'U'}
                 </div>
               )}
@@ -120,7 +227,7 @@ export const Dashboard: React.FC = () => {
           </div>
         </header>
 
-        <div className="p-8 max-w-7xl mx-auto space-y-8">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-8">
           {activeTab === 'dashboard' && (
             <>
               {/* Stats Grid */}
@@ -192,6 +299,8 @@ export const Dashboard: React.FC = () => {
               </div>
             </>
           )}
+
+          {activeTab === 'schools' && <SchoolManagement />}
 
           {activeTab === 'courses' && <CourseList />}
           

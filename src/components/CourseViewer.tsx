@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Book, ChevronLeft, CheckCircle, Play, FileText, HelpCircle, Loader2 } from 'lucide-react';
+import { Book, ChevronLeft, ChevronRight, CheckCircle, Play, FileText, HelpCircle, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { LessonContent } from './LessonContent';
