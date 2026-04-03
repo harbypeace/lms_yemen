@@ -7,10 +7,10 @@ serve(async (req) => {
   const { record } = await req.json()
   
   // Initialize Supabase client with service role key to bypass RLS
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  )
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://okpruwomwojoshrbdewg.supabase.co';
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || 'sb_publishable_2DaEOu1x78bzJPOkz-lGKA_DNXRfe6v';
+  
+  const supabaseClient = createClient(supabaseUrl, supabaseKey);
 
   // Fetch tenant (school) name
   const { data: tenant } = await supabaseClient

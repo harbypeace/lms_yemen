@@ -17,8 +17,16 @@ async function startServer() {
   app.use(express.json());
 
   // Supabase Admin Client (using Service Role Key if available, otherwise Anon)
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://okpruwomwojoshrbdewg.supabase.co';
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  let supabaseUrl = process.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl || !supabaseUrl.startsWith('http')) {
+    supabaseUrl = 'https://okpruwomwojoshrbdewg.supabase.co';
+  }
+  
+  let supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!supabaseServiceKey || supabaseServiceKey === 'undefined') {
+    supabaseServiceKey = 'sb_publishable_2DaEOu1x78bzJPOkz-lGKA_DNXRfe6v'; // Fallback to anon key
+  }
+  
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
   // Middleware to verify Supabase User

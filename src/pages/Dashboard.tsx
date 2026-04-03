@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { 
@@ -13,7 +13,8 @@ import {
   Menu,
   X,
   Building2,
-  ChevronDown
+  ChevronDown,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseList } from '../components/CourseList';
@@ -31,15 +32,63 @@ export const Dashboard: React.FC = () => {
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
 
+  const [dashboardStats, setDashboardStats] = useState({ courses: 0, members: 0, progress: 0 });
+  const [recentCourses, setRecentCourses] = useState<any[]>([]);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      if (!activeTenant) return;
+      setIsLoadingStats(true);
+
+      try {
+        // Fetch courses count
+        const { count: coursesCount } = await supabase
+          .from('courses')
+          .select('*', { count: 'exact', head: true })
+          .eq('tenant_id', activeTenant.id);
+
+        // Fetch members count
+        const { count: membersCount } = await supabase
+          .from('memberships')
+          .select('*', { count: 'exact', head: true })
+          .eq('tenant_id', activeTenant.id);
+
+        // Fetch recent courses
+        const { data: recent } = await supabase
+          .from('courses')
+          .select('*')
+          .eq('tenant_id', activeTenant.id)
+          .order('created_at', { ascending: false })
+          .limit(3);
+
+        setDashboardStats({
+          courses: coursesCount || 0,
+          members: membersCount || 0,
+          progress: 0 // Placeholder until we calculate real progress
+        });
+        setRecentCourses(recent || []);
+      } catch (error) {
+        console.error("Error loading dashboard data:", error);
+      } finally {
+        setIsLoadingStats(false);
+      }
+    }
+
+    if (activeTab === 'dashboard') {
+      loadDashboardData();
+    }
+  }, [activeTenant, activeTab]);
+
   const handleTabChange = (tab: any) => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
   };
 
   const stats = [
-    { label: 'Active Courses', value: '12', icon: BookOpen, color: 'bg-blue-500' },
-    { label: 'Total Students', value: '1,240', icon: Users, color: 'bg-indigo-500' },
-    { label: 'Avg. Progress', value: '78%', icon: GraduationCap, color: 'bg-emerald-500' },
+    { label: 'Active Courses', value: dashboardStats.courses.toString(), icon: BookOpen, color: 'bg-blue-500' },
+    { label: 'Total Members', value: dashboardStats.members.toString(), icon: Users, color: 'bg-indigo-500' },
+    { label: 'Avg. Progress', value: `${dashboardStats.progress}%`, icon: GraduationCap, color: 'bg-emerald-500' },
   ];
 
   return (
@@ -262,20 +311,30 @@ export const Dashboard: React.FC = () => {
                     <button onClick={() => setActiveTab('courses')} className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
                   </div>
                   <div className="divide-y divide-slate-100">
-                    {[1, 2, 3].map((item) => (
-                      <div key={item} className="p-4 hover:bg-slate-50 transition-all flex items-center justify-between group cursor-pointer">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
-                            <BookOpen className="w-6 h-6 text-slate-400" />
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-slate-900">Advanced Mathematics {item}</h4>
-                            <p className="text-sm text-slate-500">12 Lessons • 4 Quizzes</p>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-all" />
+                    {isLoadingStats ? (
+                      <div className="p-8 flex justify-center">
+                        <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
                       </div>
-                    ))}
+                    ) : recentCourses.length > 0 ? (
+                      recentCourses.map((course) => (
+                        <div key={course.id} className="p-4 hover:bg-slate-50 transition-all flex items-center justify-between group cursor-pointer">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
+                              <BookOpen className="w-6 h-6 text-slate-400" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-slate-900">{course.title}</h4>
+                              <p className="text-sm text-slate-500 line-clamp-1">{course.description || 'No description provided'}</p>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-all" />
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 text-center text-slate-500">
+                        No courses found for this school.
+                      </div>
+                    )}
                   </div>
                 </section>
 
