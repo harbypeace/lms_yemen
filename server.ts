@@ -140,6 +140,95 @@ async function startServer() {
     }
   });
 
+  // Create Student Action (for Parents)
+  app.post('/api/students', authenticateUser, async (req: any, res: any) => {
+    const { username, password, fullName, grade, phone, whatsapp, city, schoolName } = req.body;
+    const parentId = req.user.id;
+
+    try {
+      // 1. Verify user is a parent
+      const { data: parentProfile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', parentId)
+        .single();
+
+      if (profileError || parentProfile?.role !== 'parent') {
+        return res.status(403).json({ error: 'Unauthorized: Only parents can create student accounts' });
+      }
+
+      // 2. Create user in Supabase Auth
+      const dummyEmail = `${username.toLowerCase()}@nexus-internal.com`;
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: dummyEmail,
+        password: password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          username: username,
+          role: 'student',
+        }
+      });
+
+      if (authError) throw authError;
+
+      const studentId = authData.user.id;
+
+      // 3. The trigger creates the profile, but we need to update it with the extra fields
+      // Wait a moment for the trigger to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const { error: updateError } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          grade,
+          phone,
+          whatsapp,
+          city,
+          school_name: schoolName,
+          parent_id: parentId
+        })
+        .eq('id', studentId);
+
+      if (updateError) {
+        console.error('Error updating student profile:', updateError);
+        // Continue anyway, as the user was created
+      }
+
+      // 4. Get general tenant ID
+      const { data: generalTenant } = await supabaseAdmin
+        .from('tenants')
+        .select('id')
+        .eq('slug', 'general')
+        .single();
+
+      if (generalTenant) {
+        // 5. Add membership to general tenant
+        await supabaseAdmin
+          .from('memberships')
+          .insert([{
+            user_id: studentId,
+            tenant_id: generalTenant.id,
+            role: 'student'
+          }]);
+
+        // 6. Link parent and student
+        await supabaseAdmin
+          .from('parent_student')
+          .insert([{
+            parent_id: parentId,
+            student_id: studentId,
+            tenant_id: generalTenant.id
+          }]);
+      }
+
+      res.status(201).json({ success: true, studentId });
+    } catch (err: any) {
+      console.error('Error creating student:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

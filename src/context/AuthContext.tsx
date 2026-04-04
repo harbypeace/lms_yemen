@@ -95,12 +95,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (generalTenant) {
           console.log('Enrolling user in General tenant...');
           const isDefaultAdmin = user?.email === 'lms_yemen@outlook.com';
+          
+          // Get role from user metadata, default to student if not found
+          const userRole = user?.user_metadata?.role || 'student';
+          const finalRole = isDefaultAdmin ? 'super_admin' : userRole;
+
           const { data: newMembership, error: enrollError } = await supabase
             .from('memberships')
             .insert([{ 
               user_id: userId, 
               tenant_id: generalTenant.id, 
-              role: isDefaultAdmin ? 'super_admin' : 'student'
+              role: finalRole
             }])
             .select('*, tenants(*)')
             .single();

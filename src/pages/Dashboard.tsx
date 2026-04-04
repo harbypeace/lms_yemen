@@ -5,7 +5,7 @@ import {
   LayoutDashboard, 
   BookOpen, 
   Users, 
-  Settings, 
+  Settings as SettingsIcon, 
   LogOut, 
   GraduationCap,
   ChevronRight,
@@ -23,11 +23,12 @@ import { ProgressTracker } from '../components/ProgressTracker';
 import { ParentDashboard } from '../components/ParentDashboard';
 import { PermissionsDebugger } from '../components/PermissionsDebugger';
 import { SchoolManagement } from '../components/SchoolManagement';
+import { Settings } from '../components/Settings';
 import { cn } from '../lib/utils';
 
 export const Dashboard: React.FC = () => {
   const { profile, activeTenant, memberships, setActiveTenant, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'members' | 'progress' | 'children' | 'schools'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
@@ -162,7 +163,12 @@ export const Dashboard: React.FC = () => {
               onClick={() => handleTabChange('children')}
             />
           )}
-          <SidebarItem icon={Settings} label="Settings" />
+          <SidebarItem 
+            icon={SettingsIcon} 
+            label="Settings" 
+            active={activeTab === 'settings'} 
+            onClick={() => handleTabChange('settings')}
+          />
         </nav>
 
         <div className="p-4 border-t border-slate-200">
@@ -368,6 +374,8 @@ export const Dashboard: React.FC = () => {
           {activeTab === 'progress' && <ProgressTracker />}
 
           {activeTab === 'children' && <ParentDashboard />}
+
+          {activeTab === 'settings' && <Settings />}
         </div>
       </main>
     </div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Users, UserPlus, Search, Loader2, ChevronRight, GraduationCap, BookOpen, CheckCircle } from 'lucide-react';
+import { Users, UserPlus, Search, Loader2, ChevronRight, GraduationCap, BookOpen, CheckCircle, Plus, Edit2, Phone, MapPin, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Student {
@@ -23,19 +23,58 @@ interface StudentProgress {
 }
 
 export const ParentDashboard: React.FC = () => {
-  const { user, activeTenant } = useAuth();
+  const { user, profile, activeTenant } = useAuth();
   const [students, setStudents] = useState<StudentProgress[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Modals state
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  
+  // Form states
   const [studentUsername, setStudentUsername] = useState('');
   const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Add Child Form
+  const [newChild, setNewChild] = useState({
+    username: '',
+    password: '',
+    fullName: '',
+    grade: '',
+    phone: '',
+    whatsapp: '',
+    city: '',
+    schoolName: ''
+  });
+  const [addingChild, setAddingChild] = useState(false);
+
+  // Edit Profile Form
+  const [editProfile, setEditProfile] = useState({
+    fullName: profile?.full_name || '',
+    phone: profile?.phone || '',
+    whatsapp: profile?.whatsapp || '',
+    city: profile?.city || ''
+  });
+  const [updatingProfile, setUpdatingProfile] = useState(false);
 
   useEffect(() => {
     if (user && activeTenant) {
       fetchLinkedStudents();
     }
   }, [user, activeTenant]);
+
+  useEffect(() => {
+    if (profile) {
+      setEditProfile({
+        fullName: profile.full_name || '',
+        phone: profile.phone || '',
+        whatsapp: profile.whatsapp || '',
+        city: profile.city || ''
+      });
+    }
+  }, [profile]);
 
   const fetchLinkedStudents = async () => {
     setLoading(true);
@@ -67,12 +106,12 @@ export const ParentDashboard: React.FC = () => {
       // 3. Get progress for each student
       const studentData: StudentProgress[] = [];
 
-      for (const profile of profiles) {
+      for (const p of profiles) {
         // Get enrollments for this student
         const { data: enrollments, error: enrollError } = await supabase
           .from('enrollments')
           .select('course_id, courses(id, title)')
-          .eq('user_id', profile.id)
+          .eq('user_id', p.id)
           .eq('tenant_id', activeTenant?.id);
 
         if (enrollError) continue;
@@ -95,7 +134,7 @@ export const ParentDashboard: React.FC = () => {
           const { count: completedLessons } = await supabase
             .from('progress')
             .select('id', { count: 'exact', head: true })
-            .eq('user_id', profile.id)
+            .eq('user_id', p.id)
             .eq('completed', true)
             .in('lesson_id', (
                await supabase.from('lessons').select('id').in('module_id', 
@@ -113,7 +152,7 @@ export const ParentDashboard: React.FC = () => {
         }
 
         studentData.push({
-          student: profile,
+          student: p,
           courses: coursesProgress
         });
       }
@@ -135,13 +174,13 @@ export const ParentDashboard: React.FC = () => {
 
     try {
       // 1. Find student by username
-      const { data: profile, error: profileError } = await supabase
+      const { data: p, error: profileError } = await supabase
         .from('profiles')
         .select('id')
         .eq('username', studentUsername)
         .single();
 
-      if (profileError || !profile) {
+      if (profileError || !p) {
         throw new Error('Student not found. Please check the ID.');
       }
 
@@ -150,7 +189,7 @@ export const ParentDashboard: React.FC = () => {
         .from('parent_student')
         .select('id')
         .eq('parent_id', user.id)
-        .eq('student_id', profile.id)
+        .eq('student_id', p.id)
         .eq('tenant_id', activeTenant.id)
         .maybeSingle();
 
@@ -163,13 +202,13 @@ export const ParentDashboard: React.FC = () => {
         .from('parent_student')
         .insert({
           parent_id: user.id,
-          student_id: profile.id,
+          student_id: p.id,
           tenant_id: activeTenant.id
         });
 
       if (linkError) throw linkError;
 
-      setIsModalOpen(false);
+      setIsLinkModalOpen(false);
       setStudentUsername('');
       fetchLinkedStudents();
     } catch (err: any) {
@@ -179,20 +218,119 @@ export const ParentDashboard: React.FC = () => {
     }
   };
 
+  const handleAddChild = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !activeTenant) return;
+
+    setAddingChild(true);
+    setError(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No session found');
+
+      const response = await fetch('/api/students', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(newChild)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create student account');
+      }
+
+      setIsAddModalOpen(false);
+      setNewChild({
+        username: '', password: '', fullName: '', grade: '', phone: '', whatsapp: '', city: '', schoolName: ''
+      });
+      fetchLinkedStudents();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setAddingChild(false);
+    }
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    setUpdatingProfile(true);
+    setError(null);
+
+    try {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: editProfile.fullName,
+          phone: editProfile.phone,
+          whatsapp: editProfile.whatsapp,
+          city: editProfile.city
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setIsEditProfileOpen(false);
+      // Force a reload to update context
+      window.location.reload();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUpdatingProfile(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">My Children</h2>
           <p className="text-slate-500 text-sm">Monitor your children's learning progress and activities.</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-        >
-          <UserPlus className="w-5 h-5" />
-          Link Student
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Your Parent ID:</span>
+            <code className="text-sm font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{user?.id}</code>
+            <button 
+              onClick={() => {
+                if (user?.id) {
+                  navigator.clipboard.writeText(user.id);
+                  alert('Parent ID copied to clipboard!');
+                }
+              }}
+              className="text-xs text-slate-500 hover:text-indigo-600 underline ml-2"
+            >
+              Copy
+            </button>
+          </div>
+          <button 
+            onClick={() => setIsEditProfileOpen(true)}
+            className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"
+          >
+            <Edit2 className="w-4 h-4" />
+            Edit Profile
+          </button>
+          <button 
+            onClick={() => setIsLinkModalOpen(true)}
+            className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"
+          >
+            <Search className="w-4 h-4" />
+            Link Existing
+          </button>
+          <button 
+            onClick={() => setIsAddModalOpen(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+          >
+            <Plus className="w-5 h-5" />
+            Add Child
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -272,27 +410,131 @@ export const ParentDashboard: React.FC = () => {
           <Users className="w-16 h-16 text-slate-200 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-slate-900">No students linked</h3>
           <p className="text-slate-500 mt-2 max-w-sm mx-auto">
-            Link your children's accounts using their Student ID to monitor their progress.
+            Link your children's accounts using their Student ID or create a new account for them.
           </p>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="mt-6 text-indigo-600 font-bold hover:underline flex items-center gap-2 mx-auto"
-          >
-            <UserPlus className="w-5 h-5" />
-            Link your first student
-          </button>
+          <div className="mt-6 flex items-center justify-center gap-4">
+            <button 
+              onClick={() => setIsLinkModalOpen(true)}
+              className="text-indigo-600 font-bold hover:underline flex items-center gap-2"
+            >
+              <Search className="w-5 h-5" />
+              Link Existing
+            </button>
+            <span className="text-slate-300">|</span>
+            <button 
+              onClick={() => setIsAddModalOpen(true)}
+              className="text-indigo-600 font-bold hover:underline flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Create New
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Link Student Modal */}
+      {/* Edit Profile Modal */}
       <AnimatePresence>
-        {isModalOpen && (
+        {isEditProfileOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => setIsEditProfileOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 border border-slate-200 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-900">Edit Profile</h3>
+                <button 
+                  onClick={() => setIsEditProfileOpen(false)}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-all"
+                >
+                  <User className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateProfile} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editProfile.fullName}
+                    onChange={(e) => setEditProfile({...editProfile, fullName: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    value={editProfile.phone}
+                    onChange={(e) => setEditProfile({...editProfile, phone: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">WhatsApp</label>
+                  <input
+                    type="tel"
+                    value={editProfile.whatsapp}
+                    onChange={(e) => setEditProfile({...editProfile, whatsapp: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
+                  <input
+                    type="text"
+                    value={editProfile.city}
+                    onChange={(e) => setEditProfile({...editProfile, city: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+
+                {error && (
+                  <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg">
+                    {error}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditProfileOpen(false)}
+                    className="flex-1 py-2.5 border border-slate-200 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updatingProfile}
+                    className="flex-1 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    {updatingProfile ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Link Student Modal */}
+      <AnimatePresence>
+        {isLinkModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsLinkModalOpen(false)}
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div
@@ -302,9 +544,9 @@ export const ParentDashboard: React.FC = () => {
               className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 border border-slate-200"
             >
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-slate-900">Link Student Account</h3>
+                <h3 className="text-xl font-bold text-slate-900">Link Existing Student</h3>
                 <button 
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => setIsLinkModalOpen(false)}
                   className="p-2 hover:bg-slate-100 rounded-lg transition-all"
                 >
                   <Search className="w-5 h-5 text-slate-400" />
@@ -339,7 +581,7 @@ export const ParentDashboard: React.FC = () => {
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={() => setIsLinkModalOpen(false)}
                     className="flex-1 py-2.5 border border-slate-200 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-all"
                   >
                     Cancel
@@ -350,6 +592,150 @@ export const ParentDashboard: React.FC = () => {
                     className="flex-1 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
                   >
                     {linking ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Link Account'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Child Modal */}
+      <AnimatePresence>
+        {isAddModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 border border-slate-200 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-900">Create Student Account</h3>
+                <button 
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-all"
+                >
+                  <Plus className="w-5 h-5 text-slate-400 rotate-45" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddChild} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newChild.fullName}
+                      onChange={(e) => setNewChild({...newChild, fullName: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Username *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newChild.username}
+                      onChange={(e) => setNewChild({...newChild, username: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Password *</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={newChild.password}
+                      onChange={(e) => setNewChild({...newChild, password: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Grade</label>
+                    <input
+                      type="text"
+                      value={newChild.grade}
+                      onChange={(e) => setNewChild({...newChild, grade: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                    <input
+                      type="tel"
+                      value={newChild.phone}
+                      onChange={(e) => setNewChild({...newChild, phone: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">WhatsApp</label>
+                    <input
+                      type="tel"
+                      value={newChild.whatsapp}
+                      onChange={(e) => setNewChild({...newChild, whatsapp: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
+                    <input
+                      type="text"
+                      value={newChild.city}
+                      onChange={(e) => setNewChild({...newChild, city: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">School Name</label>
+                    <input
+                      type="text"
+                      value={newChild.schoolName}
+                      onChange={(e) => setNewChild({...newChild, schoolName: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg">
+                    {error}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="flex-1 py-2.5 border border-slate-200 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addingChild}
+                    className="flex-1 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    {addingChild ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Create Account'}
                   </button>
                 </div>
               </form>

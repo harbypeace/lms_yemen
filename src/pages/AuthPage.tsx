@@ -14,6 +14,7 @@ export const AuthPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState<'student' | 'parent'>('student');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,6 +65,7 @@ export const AuthPage: React.FC = () => {
             data: {
               full_name: fullName,
               username: isStudentLogin ? username : null,
+              role: role,
             },
           },
         });
@@ -79,45 +81,24 @@ export const AuthPage: React.FC = () => {
   };
 
   const handleGoogleLogin = async () => {
-    const redirectTo = `${window.location.origin}/auth/callback`;
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo,
-        skipBrowserRedirect: true,
-      },
-    });
+    setLoading(true);
+    setError(null);
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+        },
+      });
 
-    if (error) {
-      setError(error.message);
-      return;
-    }
-
-    if (data?.url) {
-      const authWindow = window.open(data.url, 'google_auth', 'width=600,height=700');
-      
-      const messageHandler = (event: MessageEvent) => {
-        if (event.origin !== window.location.origin) return;
-        if (event.data?.type === 'AUTH_SUCCESS') {
-          console.log('Auth success message received');
-          window.removeEventListener('message', messageHandler);
-          window.location.reload();
-        }
-      };
-
-      window.addEventListener('message', messageHandler);
-
-      // Fallback: Monitor if the window is closed
-      const timer = setInterval(async () => {
-        if (authWindow?.closed) {
-          clearInterval(timer);
-          console.log('Auth window closed, checking session...');
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) {
-            window.location.reload();
-          }
-        }
-      }, 1000);
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
     }
   };
 
@@ -177,20 +158,51 @@ export const AuthPage: React.FC = () => {
 
           <form onSubmit={handleAuth} className="space-y-4">
             {!isLogin && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-                    placeholder="John Doe"
-                  />
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">I am a...</label>
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setRole('student')}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl border font-semibold transition-all",
+                        role === 'student' 
+                          ? "bg-indigo-50 border-indigo-200 text-indigo-700" 
+                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      Student
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRole('parent')}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl border font-semibold transition-all",
+                        role === 'parent' 
+                          ? "bg-indigo-50 border-indigo-200 text-indigo-700" 
+                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      Parent
+                    </button>
+                  </div>
                 </div>
-              </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                      placeholder="John Doe"
+                    />
+                  </div>
+                </div>
+              </>
             )}
 
             <div>

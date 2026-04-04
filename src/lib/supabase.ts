@@ -23,8 +23,16 @@ export const supabase = createClient(finalUrl, finalKey);
 export type Profile = {
   id: string;
   full_name: string | null;
+  username: string | null;
   avatar_url: string | null;
   phone: string | null;
+  whatsapp: string | null;
+  role: 'student' | 'parent' | 'teacher' | 'school_admin' | 'super_admin' | null;
+  grade: string | null;
+  city: string | null;
+  address: string | null;
+  school_name: string | null;
+  parent_id: string | null;
 };
 
 export type Tenant = {

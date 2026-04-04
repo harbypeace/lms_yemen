@@ -3,11 +3,14 @@ import { AuthPage } from './pages/AuthPage';
 import { Dashboard } from './pages/Dashboard';
 import { AcceptInvite } from './pages/AcceptInvite';
 import { AuthCallback } from './pages/AuthCallback';
+import { StudentOnboarding } from './components/StudentOnboarding';
 import { Loader2 } from 'lucide-react';
+import { useState } from 'react';
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const path = window.location.pathname;
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
 
   if (loading) {
     return (
@@ -27,7 +30,23 @@ function AppContent() {
     return <AcceptInvite />;
   }
 
-  return user ? <Dashboard /> : <AuthPage />;
+  if (!user) {
+    return <AuthPage />;
+  }
+
+  // Check if student needs onboarding
+  const isStudentOrNew = !profile?.role || profile?.role === 'student';
+  const needsOnboarding = isStudentOrNew && !profile?.grade && !onboardingComplete;
+
+  if (needsOnboarding) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <StudentOnboarding onComplete={() => setOnboardingComplete(true)} />
+      </div>
+    );
+  }
+
+  return <Dashboard />;
 }
 
 export default function App() {
