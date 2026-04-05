@@ -176,7 +176,7 @@ export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComple
       {!isCompleted && blocks.every(b => b.type !== 'quiz') && (
         <div className="flex justify-center pt-8">
           <button
-            onClick={onComplete}
+            onClick={() => onComplete()}
             className="px-10 py-4 bg-emerald-600 text-white font-bold rounded-2xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 flex items-center gap-3"
           >
             <CheckCircle className="w-6 h-6" />

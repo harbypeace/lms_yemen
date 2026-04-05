@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { User, Lock, MapPin, Phone, Building, Loader2, Save, Users, GraduationCap } from 'lucide-react';
+import { User, Lock, MapPin, Phone, Building, Loader2, Save, Users, GraduationCap, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const Settings: React.FC = () => {
@@ -22,8 +22,12 @@ export const Settings: React.FC = () => {
     city: '',
     address: '',
     schoolName: '',
-    parentId: ''
+    parentId: '',
+    customId: ''
   });
+
+  const [parents, setParents] = useState<any[]>([]);
+  const [loadingParents, setLoadingParents] = useState(false);
 
   // Password Form State
   const [passwords, setPasswords] = useState({
@@ -41,10 +45,58 @@ export const Settings: React.FC = () => {
         city: profile.city || '',
         address: profile.address || '',
         schoolName: profile.school_name || '',
-        parentId: profile.parent_id || ''
+        parentId: profile.parent_id || '',
+        // @ts-ignore - custom_id might not be in the type yet
+        customId: profile.custom_id || ''
       });
     }
   }, [profile]);
+
+  useEffect(() => {
+    const fetchParents = async () => {
+      if (profile?.role !== 'student') return;
+      
+      setLoadingParents(true);
+      try {
+        // Get current tenant ID
+        const { data: membership } = await supabase
+          .from('memberships')
+          .select('tenant_id')
+          .eq('user_id', user?.id)
+          .single();
+
+        if (membership) {
+          const { data: parentMemberships } = await supabase
+            .from('memberships')
+            .select(`
+              user_id,
+              profiles:user_id (
+                full_name,
+                custom_id
+              )
+            `)
+            .eq('tenant_id', membership.tenant_id)
+            .eq('role', 'parent');
+
+          if (parentMemberships) {
+            setParents(parentMemberships.map((m: any) => ({
+              id: m.user_id,
+              name: m.profiles.full_name,
+              customId: m.profiles.custom_id
+            })));
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching parents:', err);
+      } finally {
+        setLoadingParents(false);
+      }
+    };
+
+    if (user && profile?.role === 'student') {
+      fetchParents();
+    }
+  }, [user, profile]);
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,16 +199,19 @@ export const Settings: React.FC = () => {
             <form onSubmit={handleProfileUpdate} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    {profile?.role === 'student' ? 'Student ID' : 'Parent ID'} (System Generated)
+                  </label>
                   <input
                     type="text"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                    readOnly
+                    value={formData.customId}
+                    className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 cursor-not-allowed font-mono text-sm"
+                    placeholder="Generating..."
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Student ID / Username</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
                   <input
                     type="text"
                     value={formData.username}
@@ -168,6 +223,15 @@ export const Settings: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={formData.fullName}
+                    onChange={(e) => setFormData({...formData, fullName: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -175,18 +239,6 @@ export const Settings: React.FC = () => {
                       type="tel"
                       value={formData.phone}
                       onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">WhatsApp</label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="tel"
-                      value={formData.whatsapp}
-                      onChange={(e) => setFormData({...formData, whatsapp: e.target.value})}
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
                     />
                   </div>
@@ -237,16 +289,27 @@ export const Settings: React.FC = () => {
 
               {profile?.role === 'student' && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Parent ID</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Select Parent</label>
                   <div className="relative">
                     <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
+                    <select
                       value={formData.parentId}
                       onChange={(e) => setFormData({...formData, parentId: e.target.value})}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all font-mono text-sm"
-                      placeholder="Link to a parent account"
-                    />
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all appearance-none"
+                    >
+                      <option value="">No Parent Linked</option>
+                      {parents.map(parent => (
+                        <option key={parent.id} value={parent.id}>
+                          {parent.name} ({parent.customId})
+                        </option>
+                      ))}
+                    </select>
+                    {loadingParents && (
+                      <div className="absolute right-10 top-1/2 -translate-y-1/2">
+                        <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                      </div>
+                    )}
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
               )}

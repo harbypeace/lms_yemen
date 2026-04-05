@@ -24,6 +24,8 @@ import { ParentDashboard } from '../components/ParentDashboard';
 import { PermissionsDebugger } from '../components/PermissionsDebugger';
 import { SchoolManagement } from '../components/SchoolManagement';
 import { Settings } from '../components/Settings';
+import { GamificationWidget } from '../components/GamificationWidget';
+import { GamificationOverlay } from '../components/GamificationOverlay';
 import { cn } from '../lib/utils';
 
 export const Dashboard: React.FC = () => {
@@ -94,6 +96,7 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
+      <GamificationOverlay />
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
         <div 
@@ -129,24 +132,30 @@ export const Dashboard: React.FC = () => {
             active={activeTab === 'dashboard'} 
             onClick={() => handleTabChange('dashboard')}
           />
-          <SidebarItem 
-            icon={Building2} 
-            label="Schools" 
-            active={activeTab === 'schools'} 
-            onClick={() => handleTabChange('schools')}
-          />
-          <SidebarItem 
-            icon={BookOpen} 
-            label="Courses" 
-            active={activeTab === 'courses'} 
-            onClick={() => handleTabChange('courses')}
-          />
-          <SidebarItem 
-            icon={Users} 
-            label="Members" 
-            active={activeTab === 'members'} 
-            onClick={() => handleTabChange('members')}
-          />
+          {(activeRole === 'super_admin' || activeRole === 'school_admin') && (
+            <SidebarItem 
+              icon={Building2} 
+              label="Schools" 
+              active={activeTab === 'schools'} 
+              onClick={() => handleTabChange('schools')}
+            />
+          )}
+          {(activeRole === 'super_admin' || activeRole === 'school_admin' || activeRole === 'teacher' || activeRole === 'student') && (
+            <SidebarItem 
+              icon={BookOpen} 
+              label="Courses" 
+              active={activeTab === 'courses'} 
+              onClick={() => handleTabChange('courses')}
+            />
+          )}
+          {(activeRole === 'super_admin' || activeRole === 'school_admin' || activeRole === 'teacher') && (
+            <SidebarItem 
+              icon={Users} 
+              label="Members" 
+              active={activeTab === 'members'} 
+              onClick={() => handleTabChange('members')}
+            />
+          )}
           {activeRole === 'student' && (
             <SidebarItem 
               icon={GraduationCap} 
@@ -285,6 +294,7 @@ export const Dashboard: React.FC = () => {
         <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-8">
           {activeTab === 'dashboard' && (
             <>
+              <GamificationWidget />
               {/* Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {stats.map((stat, i) => (

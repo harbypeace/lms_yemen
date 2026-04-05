@@ -35,8 +35,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Auth state change event:', event, 'Session:', !!session);
-      setSession(session);
-      setUser(session?.user ?? null);
+      
+      // Only update if session actually changed to avoid loops
+      setSession(prev => {
+        if (prev?.access_token === session?.access_token) return prev;
+        return session;
+      });
+      
+      setUser(prev => {
+        if (prev?.id === session?.user?.id) return prev;
+        return session?.user ?? null;
+      });
       
       if (!session) {
         setProfile(null);
@@ -44,13 +53,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setActiveTenant(null);
         setLoading(false);
       }
-    });
-
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (!session) setLoading(false);
     });
 
     return () => subscription.unsubscribe();

@@ -3,6 +3,8 @@ import { AuthPage } from './pages/AuthPage';
 import { Dashboard } from './pages/Dashboard';
 import { AcceptInvite } from './pages/AcceptInvite';
 import { StudentOnboarding } from './components/StudentOnboarding';
+import { GamificationOverlay } from './components/GamificationOverlay';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -40,13 +42,20 @@ function AppContent() {
     );
   }
 
-  return <Dashboard />;
+  return (
+    <ErrorBoundary>
+      <Dashboard />
+      <GamificationOverlay />
+    </ErrorBoundary>
+  );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

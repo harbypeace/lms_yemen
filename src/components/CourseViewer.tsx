@@ -5,6 +5,8 @@ import { Book, ChevronLeft, ChevronRight, CheckCircle, Play, FileText, HelpCircl
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { LessonContent } from './LessonContent';
+import { CourseLeaderboard } from './CourseLeaderboard';
+import { useGamification } from '../hooks/useGamification';
 
 interface CourseViewerProps {
   courseId: string;
@@ -13,6 +15,7 @@ interface CourseViewerProps {
 
 export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) => {
   const { user } = useAuth();
+  const { trackEvent, checkCourseCompletion } = useGamification();
   const [course, setCourse] = useState<any>(null);
   const [modules, setModules] = useState<any[]>([]);
   const [progress, setProgress] = useState<Record<string, boolean>>({});
@@ -101,6 +104,25 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
         ...prev,
         [lessonId]: true
       }));
+
+      // Track gamification event if it wasn't already completed
+      if (!isCompleted) {
+        // Find the unit ID for this lesson
+        const unitId = modules.find(m => m.lessons.some((l: any) => l.id === lessonId))?.id;
+        
+        await trackEvent({
+          eventType: 'lesson_completed',
+          entityType: 'lesson',
+          entityId: lessonId,
+          courseId: courseId,
+          unitId: unitId,
+          lessonId: lessonId,
+          metadata: { score }
+        });
+
+        // Check if course is now fully completed
+        await checkCourseCompletion(courseId);
+      }
     } catch (error) {
       console.error('Error updating progress:', error);
     } finally {
@@ -190,6 +212,7 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
               ))}
             </div>
           </div>
+          <CourseLeaderboard courseId={courseId} />
         </div>
 
         {/* Lesson Content Area */}

@@ -103,7 +103,7 @@ export const ParentDashboard: React.FC = () => {
       // 2. Get student profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, username')
+        .select('id, full_name, avatar_url, username, custom_id')
         .in('id', studentIds);
 
       if (profilesError) throw profilesError;
@@ -218,11 +218,11 @@ export const ParentDashboard: React.FC = () => {
     setError(null);
 
     try {
-      // 1. Find student by username
+      // 1. Find student by username or custom_id
       const { data: p, error: profileError } = await supabase
         .from('profiles')
         .select('id')
-        .eq('username', studentUsername)
+        .or(`username.eq."${studentUsername}",custom_id.eq."${studentUsername}"`)
         .single();
 
       if (profileError || !p) {
@@ -346,11 +346,15 @@ export const ParentDashboard: React.FC = () => {
           )}
           <div className="bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm flex items-center gap-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Your Parent ID:</span>
-            <code className="text-sm font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{user?.id}</code>
+            <code className="text-sm font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+              {/* @ts-ignore - custom_id might not be in the type yet */}
+              {profile?.custom_id || user?.id}
+            </code>
             <button 
               onClick={() => {
-                if (user?.id) {
-                  navigator.clipboard.writeText(user.id);
+                const idToCopy = (profile as any)?.custom_id || user?.id;
+                if (idToCopy) {
+                  navigator.clipboard.writeText(idToCopy);
                   alert('Parent ID copied to clipboard!');
                 }
               }}
@@ -409,7 +413,9 @@ export const ParentDashboard: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="font-bold text-slate-900 text-lg">{data.student.full_name}</h3>
-                    <p className="text-slate-500 text-sm">ID: {data.student.username}</p>
+                    <p className="text-slate-500 text-sm">
+                      ID: {(data.student as any).custom_id || data.student.username}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
