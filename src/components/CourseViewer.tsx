@@ -14,11 +14,10 @@ interface CourseViewerProps {
 }
 
 export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) => {
-  const { user } = useAuth();
+  const { user, progress, setProgress } = useAuth();
   const { trackEvent, checkCourseCompletion } = useGamification();
   const [course, setCourse] = useState<any>(null);
   const [modules, setModules] = useState<any[]>([]);
-  const [progress, setProgress] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
@@ -52,18 +51,6 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
       })) || [];
       
       setModules(sortedModules);
-
-      // 3. Get student progress
-      const { data: progressData } = await supabase
-        .from('progress')
-        .select('lesson_id, completed')
-        .eq('user_id', user?.id);
-      
-      const progressMap: Record<string, boolean> = {};
-      progressData?.forEach(p => {
-        progressMap[p.lesson_id] = p.completed;
-      });
-      setProgress(progressMap);
 
       // Select first lesson by default if none selected
       if (!selectedLessonId && sortedModules[0]?.lessons[0]) {

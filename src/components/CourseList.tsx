@@ -1,54 +1,62 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Book, ChevronRight, Plus, Search, X, Loader2, GraduationCap, CheckCircle } from 'lucide-react';
+import { Book, ChevronRight, Plus, Search, X, Loader2, GraduationCap, CheckCircle, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseViewer } from './CourseViewer';
 
-export const CourseList: React.FC = () => {
-  const { activeTenant, user, memberships } = useAuth();
+export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled = false }) => {
+  const { activeTenant, user, memberships, enrollments, setEnrollments } = useAuth();
   const [courses, setCourses] = useState<any[]>([]);
-  const [enrollments, setEnrollments] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newCourse, setNewCourse] = useState({ title: '', description: '' });
   const [creating, setCreating] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState<string | null>(null);
+  const [generatingDemo, setGeneratingDemo] = useState(false);
 
   const myRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
-  const isAdminOrTeacher = ['school_admin', 'teacher'].includes(myRole || '');
+  const isAdminOrTeacher = ['super_admin', 'school_admin', 'teacher'].includes(myRole || '');
 
   useEffect(() => {
     if (activeTenant) {
       fetchCourses();
-      if (user) fetchEnrollments();
     }
-  }, [activeTenant, user]);
+  }, [activeTenant, user, onlyEnrolled, enrollments]);
 
   const fetchCourses = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('courses')
-      .select('*')
-      .eq('tenant_id', activeTenant?.id)
-      .order('created_at', { ascending: false });
-    
-    if (data) setCourses(data);
-    setLoading(false);
-  };
+    try {
+      if (onlyEnrolled && user) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('No active session');
 
-  const fetchEnrollments = async () => {
-    const { data, error } = await supabase
-      .from('enrollments')
-      .select('course_id')
-      .eq('user_id', user?.id)
-      .eq('tenant_id', activeTenant?.id);
-    
-    if (data) {
-      const enrollMap: Record<string, boolean> = {};
-      data.forEach(e => enrollMap[e.course_id] = true);
-      setEnrollments(enrollMap);
+        const response = await fetch(`/api/my-courses?tenantId=${activeTenant?.id}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setCourses(data.courses);
+        } else {
+          throw new Error(data.error || 'Failed to fetch enrolled courses');
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('courses')
+          .select('*')
+          .eq('tenant_id', activeTenant?.id)
+          .order('created_at', { ascending: false });
+        
+        if (data) setCourses(data);
+      }
+    } catch (err: any) {
+      console.error('Error fetching courses:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -57,46 +65,111 @@ export const CourseList: React.FC = () => {
     if (!activeTenant) return;
     
     setCreating(true);
-    const { data, error } = await supabase
-      .from('courses')
-      .insert([
-        { 
-          title: newCourse.title, 
-          description: newCourse.description, 
-          tenant_id: activeTenant.id 
-        }
-      ])
-      .select();
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
 
-    if (!error && data) {
-      setCourses([data[0], ...courses]);
+      const response = await fetch('/api/courses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          title: newCourse.title,
+          description: newCourse.description,
+          tenantId: activeTenant.id
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create course');
+      }
+
+      setCourses([data.course, ...courses]);
       setIsModalOpen(false);
       setNewCourse({ title: '', description: '' });
-    } else {
-      alert(error?.message || 'Error creating course');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setCreating(false);
     }
-    setCreating(false);
   };
 
   const handleEnroll = async (courseId: string) => {
     if (!user || !activeTenant) return;
     setEnrolling(courseId);
 
-    const { error } = await supabase
-      .from('enrollments')
-      .insert({
-        user_id: user.id,
-        course_id: courseId,
-        tenant_id: activeTenant.id,
-        role: 'student'
+    // Determine the role to enroll as. 
+    // The database only accepts 'student' or 'teacher' in the enrollments table currently.
+    const enrollRole = (myRole === 'teacher') ? 'teacher' : 'student';
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
+
+      const response = await fetch('/api/enroll', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          courseId,
+          tenantId: activeTenant.id,
+          role: enrollRole
+        })
       });
 
-    if (!error) {
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to enroll');
+      }
+
       setEnrollments(prev => ({ ...prev, [courseId]: true }));
-    } else {
-      alert(error.message);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setEnrolling(null);
     }
-    setEnrolling(null);
+  };
+
+  const handleGenerateDemo = async () => {
+    if (!activeTenant || !user) return;
+    setGeneratingDemo(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
+
+      const response = await fetch('/api/demo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          tenantId: activeTenant.id
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate demo');
+      }
+
+      // Refresh courses
+      fetchCourses();
+      alert('Demo course generated successfully! Enroll and complete the lesson to test gamification.');
+    } catch (err: any) {
+      console.error('Error generating demo:', err);
+      alert('Failed to generate demo: ' + err.message);
+    } finally {
+      setGeneratingDemo(false);
+    }
   };
 
   if (selectedCourseId) {
@@ -106,15 +179,27 @@ export const CourseList: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-900">Courses</h2>
-        {isAdminOrTeacher && (
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-          >
-            <Plus className="w-5 h-5" />
-            Create Course
-          </button>
+        <h2 className="text-2xl font-bold text-slate-900">
+          {onlyEnrolled ? 'My Courses' : 'All Courses'}
+        </h2>
+        {isAdminOrTeacher && !onlyEnrolled && (
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleGenerateDemo}
+              disabled={generatingDemo}
+              className="bg-emerald-100 text-emerald-700 px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-200 transition-all disabled:opacity-50"
+            >
+              {generatingDemo ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
+              Generate Demo
+            </button>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+            >
+              <Plus className="w-5 h-5" />
+              Create Course
+            </button>
+          </div>
         )}
       </div>
 
@@ -147,6 +232,23 @@ export const CourseList: React.FC = () => {
               <div className="p-6">
                 <h3 className="font-bold text-slate-900 text-lg mb-2">{course.title}</h3>
                 <p className="text-slate-500 text-sm line-clamp-2 mb-4">{course.description}</p>
+                
+                {onlyEnrolled && (
+                  <div className="mb-4 space-y-1.5">
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      <span>Progress</span>
+                      <span>{course.completed_lessons} / {course.total_lessons} Lessons</span>
+                    </div>
+                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${course.progress_percent}%` }}
+                        className="h-full bg-indigo-600 rounded-full"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   {enrollments[course.id] ? (
                     <button 
@@ -174,8 +276,12 @@ export const CourseList: React.FC = () => {
       ) : (
         <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
           <Book className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-slate-900">No courses yet</h3>
-          <p className="text-slate-500 mt-2">Get started by creating your first course.</p>
+          <h3 className="text-xl font-bold text-slate-900">
+            {onlyEnrolled ? "You're not enrolled in any courses" : "No courses yet"}
+          </h3>
+          <p className="text-slate-500 mt-2">
+            {onlyEnrolled ? "Browse all courses to find something to learn." : "Get started by creating your first course."}
+          </p>
         </div>
       )}
 

@@ -20,6 +20,20 @@ export const ProgressTracker: React.FC = () => {
   useEffect(() => {
     if (user && activeTenant) {
       fetchProgress();
+
+      // Subscribe to progress changes
+      const channel = supabase
+        .channel('progress-tracker')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'progress', filter: `user_id=eq.${user.id}` },
+          () => fetchProgress()
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [user, activeTenant]);
 

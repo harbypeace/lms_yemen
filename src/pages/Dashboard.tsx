@@ -14,7 +14,8 @@ import {
   X,
   Building2,
   ChevronDown,
-  Loader2
+  Loader2,
+  Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseList } from '../components/CourseList';
@@ -25,12 +26,13 @@ import { PermissionsDebugger } from '../components/PermissionsDebugger';
 import { SchoolManagement } from '../components/SchoolManagement';
 import { Settings } from '../components/Settings';
 import { GamificationWidget } from '../components/GamificationWidget';
+import { GlobalLeaderboard } from '../components/GlobalLeaderboard';
 import { GamificationOverlay } from '../components/GamificationOverlay';
 import { cn } from '../lib/utils';
 
 export const Dashboard: React.FC = () => {
   const { profile, activeTenant, memberships, setActiveTenant, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'my-courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings' | 'leaderboard'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
@@ -57,6 +59,36 @@ export const Dashboard: React.FC = () => {
           .select('*', { count: 'exact', head: true })
           .eq('tenant_id', activeTenant.id);
 
+        // Fetch user progress for average
+        let userProgress = 0;
+        if (profile?.id) {
+          const { data: userEnrollments } = await supabase
+            .from('enrollments')
+            .select('course_id')
+            .eq('user_id', profile.id)
+            .eq('tenant_id', activeTenant.id);
+          
+          if (userEnrollments && userEnrollments.length > 0) {
+            const courseIds = userEnrollments.map(e => e.course_id);
+            const { data: lessons } = await supabase
+              .from('lessons')
+              .select('id, modules!inner(course_id)')
+              .in('modules.course_id', courseIds);
+            
+            const lessonIds = lessons?.map(l => l.id) || [];
+            if (lessonIds.length > 0) {
+              const { count: completedCount } = await supabase
+                .from('progress')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', profile.id)
+                .eq('completed', true)
+                .in('lesson_id', lessonIds);
+              
+              userProgress = Math.round(((completedCount || 0) / lessonIds.length) * 100);
+            }
+          }
+        }
+
         // Fetch recent courses
         const { data: recent } = await supabase
           .from('courses')
@@ -68,7 +100,7 @@ export const Dashboard: React.FC = () => {
         setDashboardStats({
           courses: coursesCount || 0,
           members: membersCount || 0,
-          progress: 0 // Placeholder until we calculate real progress
+          progress: userProgress
         });
         setRecentCourses(recent || []);
       } catch (error) {
@@ -141,12 +173,26 @@ export const Dashboard: React.FC = () => {
             />
           )}
           {(activeRole === 'super_admin' || activeRole === 'school_admin' || activeRole === 'teacher' || activeRole === 'student') && (
-            <SidebarItem 
-              icon={BookOpen} 
-              label="Courses" 
-              active={activeTab === 'courses'} 
-              onClick={() => handleTabChange('courses')}
-            />
+            <>
+              <SidebarItem 
+                icon={BookOpen} 
+                label="All Courses" 
+                active={activeTab === 'courses'} 
+                onClick={() => handleTabChange('courses')}
+              />
+              <SidebarItem 
+                icon={GraduationCap} 
+                label="My Courses" 
+                active={activeTab === 'my-courses'} 
+                onClick={() => handleTabChange('my-courses')}
+              />
+              <SidebarItem 
+                icon={Trophy} 
+                label="Leaderboard" 
+                active={activeTab === 'leaderboard'} 
+                onClick={() => handleTabChange('leaderboard')}
+              />
+            </>
           )}
           {(activeRole === 'super_admin' || activeRole === 'school_admin' || activeRole === 'teacher') && (
             <SidebarItem 
@@ -158,7 +204,7 @@ export const Dashboard: React.FC = () => {
           )}
           {activeRole === 'student' && (
             <SidebarItem 
-              icon={GraduationCap} 
+              icon={Trophy} 
               label="My Progress" 
               active={activeTab === 'progress'} 
               onClick={() => handleTabChange('progress')}
@@ -320,57 +366,63 @@ export const Dashboard: React.FC = () => {
               <PermissionsDebugger />
 
               {/* Recent Activity / Courses */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                    <h3 className="font-bold text-slate-900">Recent Courses</h3>
-                    <button onClick={() => setActiveTab('courses')} className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {isLoadingStats ? (
-                      <div className="p-8 flex justify-center">
-                        <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
-                      </div>
-                    ) : recentCourses.length > 0 ? (
-                      recentCourses.map((course) => (
-                        <div key={course.id} className="p-4 hover:bg-slate-50 transition-all flex items-center justify-between group cursor-pointer">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
-                              <BookOpen className="w-6 h-6 text-slate-400" />
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-slate-900">{course.title}</h4>
-                              <p className="text-sm text-slate-500 line-clamp-1">{course.description || 'No description provided'}</p>
-                            </div>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-all" />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-8">
+                  <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                      <h3 className="font-bold text-slate-900">Recent Courses</h3>
+                      <button onClick={() => setActiveTab('courses')} className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {isLoadingStats ? (
+                        <div className="p-8 flex justify-center">
+                          <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
                         </div>
-                      ))
-                    ) : (
-                      <div className="p-8 text-center text-slate-500">
-                        No courses found for this school.
-                      </div>
-                    )}
-                  </div>
-                </section>
+                      ) : recentCourses.length > 0 ? (
+                        recentCourses.map((course) => (
+                          <div key={course.id} className="p-4 hover:bg-slate-50 transition-all flex items-center justify-between group cursor-pointer">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
+                                <BookOpen className="w-6 h-6 text-slate-400" />
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-slate-900">{course.title}</h4>
+                                <p className="text-sm text-slate-500 line-clamp-1">{course.description || 'No description provided'}</p>
+                              </div>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-all" />
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-8 text-center text-slate-500">
+                          No courses found for this school.
+                        </div>
+                      )}
+                    </div>
+                  </section>
 
-                <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                    <h3 className="font-bold text-slate-900">Announcements</h3>
-                    <button className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {[1, 2].map((item) => (
-                      <div key={item} className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-                        <h4 className="font-bold text-indigo-900">School Holiday Notice</h4>
-                        <p className="text-sm text-indigo-700 mt-1">
-                          Please note that the school will be closed next Monday for the national holiday.
-                        </p>
-                        <span className="text-[10px] font-bold text-indigo-400 uppercase mt-2 block">2 hours ago</span>
-                      </div>
-                    ))}
-                  </div>
-                </section>
+                  <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                      <h3 className="font-bold text-slate-900">Announcements</h3>
+                      <button className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      {[1, 2].map((item) => (
+                        <div key={item} className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                          <h4 className="font-bold text-indigo-900">School Holiday Notice</h4>
+                          <p className="text-sm text-indigo-700 mt-1">
+                            Please note that the school will be closed next Monday for the national holiday.
+                          </p>
+                          <span className="text-[10px] font-bold text-indigo-400 uppercase mt-2 block">2 hours ago</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+
+                <div className="lg:col-span-1">
+                  <GlobalLeaderboard />
+                </div>
               </div>
             </>
           )}
@@ -379,9 +431,13 @@ export const Dashboard: React.FC = () => {
 
           {activeTab === 'courses' && <CourseList />}
           
+          {activeTab === 'my-courses' && <CourseList onlyEnrolled />}
+          
           {activeTab === 'members' && <MemberList />}
 
           {activeTab === 'progress' && <ProgressTracker />}
+
+          {activeTab === 'leaderboard' && <GlobalLeaderboard />}
 
           {activeTab === 'children' && <ParentDashboard />}
 

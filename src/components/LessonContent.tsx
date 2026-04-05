@@ -70,16 +70,27 @@ export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComple
           className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
         >
           {block.type === 'video' && (
-            <div className="aspect-video bg-slate-900 flex items-center justify-center relative group">
-              <div className="absolute inset-0 flex items-center justify-center bg-slate-900/40 group-hover:bg-slate-900/20 transition-all cursor-pointer">
-                <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30 shadow-2xl group-hover:scale-110 transition-all">
-                  <Play className="w-10 h-10 text-white fill-white" />
+            <div className="aspect-video bg-slate-900">
+              {block.content_json.video_url ? (
+                <iframe
+                  src={block.content_json.video_url.replace('watch?v=', 'embed/')}
+                  className="w-full h-full"
+                  allowFullScreen
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center relative group">
+                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900/40 group-hover:bg-slate-900/20 transition-all cursor-pointer">
+                    <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30 shadow-2xl group-hover:scale-110 transition-all">
+                      <Play className="w-10 h-10 text-white fill-white" />
+                    </div>
+                  </div>
+                  <div className="absolute bottom-6 left-6 right-6 flex items-center justify-between text-white/80 text-sm font-medium">
+                    <span>Video Lesson</span>
+                    <span>12:45</span>
+                  </div>
                 </div>
-              </div>
-              <div className="absolute bottom-6 left-6 right-6 flex items-center justify-between text-white/80 text-sm font-medium">
-                <span>Video Lesson</span>
-                <span>12:45</span>
-              </div>
+              )}
             </div>
           )}
 

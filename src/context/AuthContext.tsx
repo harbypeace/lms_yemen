@@ -9,9 +9,14 @@ interface AuthContextType {
   memberships: Membership[];
   activeTenant: Tenant | null;
   setActiveTenant: (tenant: Tenant | null) => void;
+  enrollments: Record<string, boolean>;
+  setEnrollments: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  progress: Record<string, boolean>;
+  setProgress: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   loading: boolean;
   signOut: () => Promise<void>;
   refreshData: () => Promise<void>;
+  fetchEnrollments: (userId: string, tenantId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,14 +27,108 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
+  const [enrollments, setEnrollments] = useState<Record<string, boolean>>({});
+  const [progress, setProgress] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const fetchingRef = useRef(false);
 
   const refreshData = async () => {
     if (user) {
       await fetchUserData(user.id);
+      if (activeTenant) {
+        await fetchEnrollments(user.id, activeTenant.id);
+      }
     }
   };
+
+  const fetchEnrollments = async (userId: string, tenantId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`/api/my-enrollments?tenantId=${tenantId}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        const enrollMap: Record<string, boolean> = {};
+        data.enrollments.forEach((id: string) => enrollMap[id] = true);
+        setEnrollments(enrollMap);
+
+        const progressMap: Record<string, boolean> = {};
+        data.progress.forEach((p: any) => progressMap[p.lesson_id] = p.completed);
+        setProgress(progressMap);
+      }
+    } catch (err) {
+      console.error('Error fetching enrollments via API:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (user && activeTenant) {
+      fetchEnrollments(user.id, activeTenant.id);
+
+      // Real-time listener for enrollments
+      const enrollmentSubscription = supabase
+        .channel('enrollment-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'enrollments',
+            filter: `user_id=eq.${user.id}`
+          },
+          () => {
+            fetchEnrollments(user.id, activeTenant.id);
+          }
+        )
+        .subscribe();
+      
+      // Real-time listener for progress
+      const progressSubscription = supabase
+        .channel('progress-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'progress',
+            filter: `user_id=eq.${user.id}`
+          },
+          () => {
+            fetchEnrollments(user.id, activeTenant.id);
+          }
+        )
+        .subscribe();
+
+      // Real-time listener for profile (XP/Points)
+      const profileSubscription = supabase
+        .channel('profile-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'profiles',
+            filter: `id=eq.${user.id}`
+          },
+          (payload) => {
+            setProfile(payload.new as Profile);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        enrollmentSubscription.unsubscribe();
+        progressSubscription.unsubscribe();
+        profileSubscription.unsubscribe();
+      };
+    }
+  }, [user?.id, activeTenant?.id]);
 
   useEffect(() => {
     // Listen for auth changes
@@ -149,6 +248,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const preferredTenant = userMemberships.find(m => m.tenants?.slug === 'general')?.tenants || userMemberships[0]?.tenants;
       if (preferredTenant) {
         setActiveTenant(preferredTenant);
+        // Fetch enrollments for the preferred tenant
+        await fetchEnrollments(userId, preferredTenant.id);
       }
     } catch (error) {
       console.error('Unexpected error in fetchUserData:', error);
@@ -163,7 +264,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, memberships, activeTenant, setActiveTenant, loading, signOut, refreshData }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      session, 
+      profile, 
+      memberships, 
+      activeTenant, 
+      setActiveTenant, 
+      enrollments,
+      setEnrollments,
+      progress,
+      setProgress,
+      fetchEnrollments,
+      loading, 
+      signOut, 
+      refreshData 
+    }}>
       {children}
     </AuthContext.Provider>
   );

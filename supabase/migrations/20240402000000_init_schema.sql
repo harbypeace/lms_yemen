@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS enrollments (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
   tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('student', 'teacher')),
+  role TEXT NOT NULL CHECK (role IN ('student', 'teacher', 'super_admin')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, course_id)
 );
