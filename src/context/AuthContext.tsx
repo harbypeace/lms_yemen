@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, Profile, Membership, Tenant } from '../lib/supabase';
 
@@ -11,6 +11,7 @@ interface AuthContextType {
   setActiveTenant: (tenant: Tenant | null) => void;
   loading: boolean;
   signOut: () => Promise<void>;
+  refreshData: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,27 +23,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
+  const fetchingRef = useRef(false);
+
+  const refreshData = async () => {
+    if (user) {
+      await fetchUserData(user.id);
+    }
+  };
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserData(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
-
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Auth state change event:', event, 'Session:', !!session);
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserData(session.user.id);
-      } else {
+      
+      if (!session) {
         setProfile(null);
         setMemberships([]);
         setActiveTenant(null);
@@ -50,53 +46,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (!session) setLoading(false);
+    });
+
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      fetchUserData(user.id);
+    }
+  }, [user?.id]);
+
   const fetchUserData = async (userId: string) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    console.log('Fetching user data for:', userId);
     try {
       const [profileRes, membershipRes] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', userId).single(),
+        supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
         supabase.from('memberships').select('*, tenants(*)').eq('user_id', userId)
       ]);
 
-      if (profileRes.error && profileRes.error.code !== 'PGRST116') {
+      if (profileRes.error) {
         console.error('Error fetching profile:', profileRes.error);
       }
       if (profileRes.data) setProfile(profileRes.data);
       
       let userMemberships = membershipRes.data || [];
 
-      // Auto-enroll in General tenant if no memberships exist
-      if (userMemberships.length === 0) {
-        console.log('No memberships found, checking for General tenant...');
-        // 1. Find or create General tenant
-        let { data: generalTenant } = await supabase
+      // Find General tenant membership
+      let generalMembership = userMemberships.find(m => m.tenants?.slug === 'general');
+
+      // Auto-enroll in General tenant if not already a member
+      if (!generalMembership) {
+        console.log('General membership not found, checking for General tenant...');
+        
+        const { data: generalTenant, error: tenantError } = await supabase
           .from('tenants')
           .select('*')
           .eq('slug', 'general')
-          .single();
+          .maybeSingle();
 
-        if (!generalTenant) {
-          console.log('General tenant not found, creating it...');
-          const { data: newTenant, error: createError } = await supabase
-            .from('tenants')
-            .insert([{ name: 'General', slug: 'general' }])
-            .select()
-            .single();
-          
-          if (createError) {
-            console.error('Error creating General tenant:', createError);
-          } else {
-            generalTenant = newTenant;
-          }
+        if (tenantError) {
+          console.error('Error finding General tenant:', tenantError);
         }
 
         if (generalTenant) {
           console.log('Enrolling user in General tenant...');
-          const isDefaultAdmin = user?.email === 'lms_yemen@outlook.com';
+          const admins = ['lms_yemen@outlook.com', 'halmontaser1@gmail.com'];
+          const isDefaultAdmin = admins.includes(user?.email || '');
           
-          // Get role from user metadata, default to student if not found
           const userRole = user?.user_metadata?.role || 'student';
           const finalRole = isDefaultAdmin ? 'super_admin' : userRole;
 
@@ -108,42 +112,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               role: finalRole
             }])
             .select('*, tenants(*)')
-            .single();
+            .maybeSingle();
 
           if (enrollError) {
             console.error('Error enrolling in General tenant:', enrollError);
           } else if (newMembership) {
-            userMemberships = [newMembership];
+            userMemberships = [...userMemberships, newMembership];
+            generalMembership = newMembership;
           }
+        } else {
+          console.warn('General tenant not found. Please ensure it is created by an admin.');
         }
-      } else {
-        // Check if we need to upgrade lms_yemen@outlook.com to super_admin in general tenant
-        const generalMembership = userMemberships.find(m => m.tenants.slug === 'general');
-        if (generalMembership && user?.email === 'lms_yemen@outlook.com' && generalMembership.role !== 'super_admin') {
-          console.log('Upgrading lms_yemen@outlook.com to super_admin in General tenant...');
-          const { data: updatedMembership, error: updateError } = await supabase
-            .from('memberships')
-            .update({ role: 'super_admin' })
-            .eq('id', generalMembership.id)
-            .select('*, tenants(*)')
-            .single();
-          
-          if (!updateError && updatedMembership) {
-            userMemberships = userMemberships.map(m => m.id === updatedMembership.id ? updatedMembership : m);
-          }
+      }
+
+      // Check if we need to upgrade admins to super_admin in general tenant
+      const admins = ['lms_yemen@outlook.com', 'halmontaser1@gmail.com'];
+      if (generalMembership && admins.includes(user?.email || '') && generalMembership.role !== 'super_admin') {
+        console.log('Upgrading admin to super_admin in General tenant...');
+        const { data: updatedMembership, error: updateError } = await supabase
+          .from('memberships')
+          .update({ role: 'super_admin' })
+          .eq('id', generalMembership.id)
+          .select('*, tenants(*)')
+          .maybeSingle();
+        
+        if (!updateError && updatedMembership) {
+          userMemberships = userMemberships.map(m => m.id === updatedMembership.id ? updatedMembership : m);
         }
       }
 
       setMemberships(userMemberships);
       
-      // Auto-select first tenant if none active
-      if (userMemberships.length > 0) {
-        setActiveTenant(userMemberships[0].tenants);
+      // Prefer General tenant as active if available
+      const preferredTenant = userMemberships.find(m => m.tenants?.slug === 'general')?.tenants || userMemberships[0]?.tenants;
+      if (preferredTenant) {
+        setActiveTenant(preferredTenant);
       }
     } catch (error) {
       console.error('Unexpected error in fetchUserData:', error);
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
   };
 
@@ -152,7 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, memberships, activeTenant, setActiveTenant, loading, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, memberships, activeTenant, setActiveTenant, loading, signOut, refreshData }}>
       {children}
     </AuthContext.Provider>
   );

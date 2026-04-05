@@ -5,7 +5,7 @@ import { User, Lock, MapPin, Phone, Building, Loader2, Save, Users, GraduationCa
 import { motion } from 'motion/react';
 
 export const Settings: React.FC = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshData } = useAuth();
   const [loading, setLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,10 +54,8 @@ export const Settings: React.FC = () => {
     setError(null);
     setSuccess(null);
 
-    try {
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({
+      try {
+        const updateData: any = {
           full_name: formData.fullName,
           username: formData.username,
           phone: formData.phone,
@@ -65,13 +63,22 @@ export const Settings: React.FC = () => {
           city: formData.city,
           address: formData.address,
           school_name: formData.schoolName,
-          parent_id: formData.parentId
-        })
-        .eq('id', user.id);
+        };
 
-      if (updateError) throw updateError;
+        // Only include parent_id if it's a valid UUID string, otherwise null
+        if (profile?.role === 'student') {
+          updateData.parent_id = formData.parentId.trim() || null;
+        }
+
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', user.id);
+
+        if (updateError) throw updateError;
 
       setSuccess('Profile updated successfully!');
+      await refreshData();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.message);

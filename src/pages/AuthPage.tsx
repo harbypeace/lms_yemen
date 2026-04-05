@@ -17,34 +17,31 @@ export const AuthPage: React.FC = () => {
   const [role, setRole] = useState<'student' | 'parent'>('student');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Heartbeat to check for session (fallback for popup communication)
-    const heartbeat = setInterval(async () => {
-      if (!authLoading && !user) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          console.log('Heartbeat detected session, reloading...');
-          clearInterval(heartbeat);
-          window.location.reload();
-        }
-      }
-    }, 2000);
-
-    return () => clearInterval(heartbeat);
-  }, [user, authLoading]);
-
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
+      const trimmedEmail = email.trim();
+      const trimmedUsername = username.trim();
+
+      // Basic validation to prevent common mistakes
+      if (isStudentLogin && trimmedUsername.includes('@')) {
+        throw new Error('Student ID should not contain an "@" symbol. Please use the "Email Login" tab for email addresses.');
+      }
+      if (!isStudentLogin && !isLogin && trimmedEmail.includes(' ') ) {
+        throw new Error('Email address should not contain spaces.');
+      }
+
       // For students without email, we use a dummy domain suffix
       // This allows them to use Supabase Auth (which requires an email)
       // while only typing their username in the UI.
       const finalEmail = isStudentLogin 
-        ? `${username.toLowerCase()}@nexus-internal.com` 
-        : email;
+        ? `${trimmedUsername.toLowerCase()}@nexus-internal.com` 
+        : trimmedEmail;
+
+      console.log('Attempting auth with:', { isLogin, isStudentLogin, finalEmail, role });
 
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({ 
@@ -52,19 +49,19 @@ export const AuthPage: React.FC = () => {
           password 
         });
         if (error) throw error;
-        
-        // Force a reload to ensure the auth state is picked up correctly across the app
-        if (data.session) {
-          window.location.reload();
-        }
       } else {
+        // Basic validation
+        if (!isStudentLogin && !trimmedEmail.includes('@')) {
+          throw new Error('Please enter a valid email address.');
+        }
+
         const { error } = await supabase.auth.signUp({
           email: finalEmail,
           password,
           options: {
             data: {
-              full_name: fullName,
-              username: isStudentLogin ? username : null,
+              full_name: fullName.trim(),
+              username: isStudentLogin ? trimmedUsername : null,
               role: role,
             },
           },
@@ -74,6 +71,7 @@ export const AuthPage: React.FC = () => {
         setIsLogin(true);
       }
     } catch (err: any) {
+      console.error('Auth error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -84,7 +82,7 @@ export const AuthPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const redirectTo = `${window.location.origin}/auth/callback`;
+      const redirectTo = `${window.location.origin}/`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -176,7 +174,10 @@ export const AuthPage: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setRole('parent')}
+                      onClick={() => {
+                        setRole('parent');
+                        setIsStudentLogin(false);
+                      }}
                       className={cn(
                         "flex-1 py-2 rounded-xl border font-semibold transition-all",
                         role === 'parent' 

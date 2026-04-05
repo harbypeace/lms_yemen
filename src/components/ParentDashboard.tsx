@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Users, UserPlus, Search, Loader2, ChevronRight, GraduationCap, BookOpen, CheckCircle, Plus, Edit2, Phone, MapPin, User } from 'lucide-react';
+import { Users, UserPlus, Search, Loader2, ChevronRight, GraduationCap, BookOpen, CheckCircle, Plus, Edit2, Phone, MapPin, User, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Student {
@@ -23,9 +23,10 @@ interface StudentProgress {
 }
 
 export const ParentDashboard: React.FC = () => {
-  const { user, profile, activeTenant } = useAuth();
+  const { user, profile, activeTenant, refreshData } = useAuth();
   const [students, setStudents] = useState<StudentProgress[]>([]);
   const [loading, setLoading] = useState(true);
+  const isFetchingRef = useRef(false);
   
   // Modals state
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
@@ -77,18 +78,22 @@ export const ParentDashboard: React.FC = () => {
   }, [profile]);
 
   const fetchLinkedStudents = async () => {
+    if (!user || !activeTenant || isFetchingRef.current) return;
+    
+    isFetchingRef.current = true;
     setLoading(true);
+    setError(null);
     try {
       // 1. Get linked student IDs
       const { data: links, error: linksError } = await supabase
         .from('parent_student')
         .select('student_id')
-        .eq('parent_id', user?.id)
-        .eq('tenant_id', activeTenant?.id);
+        .eq('parent_id', user.id)
+        .eq('tenant_id', activeTenant.id);
 
       if (linksError) throw linksError;
 
-      const studentIds = links.map(l => l.student_id);
+      const studentIds = links?.map(l => l.student_id) || [];
       if (studentIds.length === 0) {
         setStudents([]);
         setLoading(false);
@@ -104,64 +109,104 @@ export const ParentDashboard: React.FC = () => {
       if (profilesError) throw profilesError;
 
       // 3. Get progress for each student
-      const studentData: StudentProgress[] = [];
-
-      for (const p of profiles) {
-        // Get enrollments for this student
-        const { data: enrollments, error: enrollError } = await supabase
-          .from('enrollments')
-          .select('course_id, courses(id, title)')
-          .eq('user_id', p.id)
-          .eq('tenant_id', activeTenant?.id);
-
-        if (enrollError) continue;
-
-        const coursesProgress = [];
-
-        for (const enroll of enrollments || []) {
-          const course = Array.isArray(enroll.courses) ? enroll.courses[0] : enroll.courses;
-          if (!course) continue;
-
-          // Get total lessons
-          const { count: totalLessons } = await supabase
-            .from('lessons')
-            .select('id', { count: 'exact', head: true })
-            .eq('module_id', (
-              await supabase.from('modules').select('id').eq('course_id', course.id)
-            ).data?.map(m => m.id) || []);
-
-          // Get completed lessons
-          const { count: completedLessons } = await supabase
-            .from('progress')
-            .select('id', { count: 'exact', head: true })
+      const studentData: StudentProgress[] = await Promise.all((profiles || []).map(async (p) => {
+        try {
+          // Get enrollments for this student
+          const { data: enrollments, error: enrollError } = await supabase
+            .from('enrollments')
+            .select('course_id, courses(id, title)')
             .eq('user_id', p.id)
-            .eq('completed', true)
-            .in('lesson_id', (
-               await supabase.from('lessons').select('id').in('module_id', 
-                 (await supabase.from('modules').select('id').eq('course_id', course.id)).data?.map(m => m.id) || []
-               )
-            ).data?.map(l => l.id) || []);
+            .eq('tenant_id', activeTenant.id);
 
-          coursesProgress.push({
-            id: course.id,
-            title: course.title,
-            progress: totalLessons ? Math.round(((completedLessons || 0) / totalLessons) * 100) : 0,
-            completed_lessons: completedLessons || 0,
-            total_lessons: totalLessons || 0
-          });
+          if (enrollError) throw enrollError;
+
+          const coursesProgress = await Promise.all((enrollments || []).map(async (enroll: any) => {
+            try {
+              const course = Array.isArray(enroll.courses) ? enroll.courses[0] : enroll.courses;
+              if (!course) return null;
+
+              // Get modules for this course
+              const { data: modules, error: modulesError } = await supabase
+                .from('modules')
+                .select('id')
+                .eq('course_id', course.id);
+              
+              if (modulesError) throw modulesError;
+              const moduleIds = modules?.map(m => m.id) || [];
+
+              if (moduleIds.length === 0) {
+                return {
+                  id: course.id,
+                  title: course.title,
+                  progress: 0,
+                  completed_lessons: 0,
+                  total_lessons: 0
+                };
+              }
+
+              // Get total lessons
+              const { count: totalLessons, error: lessonsError } = await supabase
+                .from('lessons')
+                .select('id', { count: 'exact', head: true })
+                .in('module_id', moduleIds);
+              
+              if (lessonsError) throw lessonsError;
+
+              // Get lesson IDs for this course to filter progress
+              const { data: lessons, error: lessonsListError } = await supabase
+                .from('lessons')
+                .select('id')
+                .in('module_id', moduleIds);
+              
+              if (lessonsListError) throw lessonsListError;
+              const lessonIds = lessons?.map(l => l.id) || [];
+
+              let completedLessons = 0;
+              if (lessonIds.length > 0) {
+                const { count: completed, error: progressError } = await supabase
+                  .from('progress')
+                  .select('id', { count: 'exact', head: true })
+                  .eq('user_id', p.id)
+                  .eq('completed', true)
+                  .in('lesson_id', lessonIds);
+                
+                if (progressError) throw progressError;
+                completedLessons = completed || 0;
+              }
+
+              return {
+                id: course.id,
+                title: course.title,
+                progress: totalLessons ? Math.round((completedLessons / totalLessons) * 100) : 0,
+                completed_lessons: completedLessons,
+                total_lessons: totalLessons || 0
+              };
+            } catch (err) {
+              console.error(`Error fetching course progress for student ${p.id}:`, err);
+              return null;
+            }
+          }));
+
+          return {
+            student: p,
+            courses: coursesProgress.filter((c): c is any => c !== null)
+          };
+        } catch (err) {
+          console.error(`Error fetching data for student ${p.id}:`, err);
+          return {
+            student: p,
+            courses: []
+          };
         }
-
-        studentData.push({
-          student: p,
-          courses: coursesProgress
-        });
-      }
+      }));
 
       setStudents(studentData);
     } catch (err: any) {
-      console.error('Error fetching linked students:', err);
+      console.error('Error in fetchLinkedStudents:', err);
+      setError(err.message || 'An unexpected error occurred while fetching student data.');
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   };
 
@@ -277,8 +322,7 @@ export const ParentDashboard: React.FC = () => {
       if (updateError) throw updateError;
 
       setIsEditProfileOpen(false);
-      // Force a reload to update context
-      window.location.reload();
+      await refreshData();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -294,6 +338,12 @@ export const ParentDashboard: React.FC = () => {
           <p className="text-slate-500 text-sm">Monitor your children's learning progress and activities.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-2 rounded-xl border border-red-100 text-sm font-medium animate-pulse">
+              <XCircle className="w-4 h-4" />
+              {error}
+            </div>
+          )}
           <div className="bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm flex items-center gap-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Your Parent ID:</span>
             <code className="text-sm font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{user?.id}</code>

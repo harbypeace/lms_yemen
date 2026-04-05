@@ -5,7 +5,7 @@ import { Loader2, GraduationCap, MapPin, School, User } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const StudentOnboarding: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
-  const { profile } = useAuth();
+  const { profile, refreshData } = useAuth();
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<'student' | 'parent' | null>(profile?.role as any || null);
   const [grade, setGrade] = useState('');
@@ -46,9 +46,8 @@ export const StudentOnboarding: React.FC<{ onComplete: () => void }> = ({ onComp
             .eq('tenant_id', generalTenant.id);
         }
 
+        await refreshData();
         onComplete();
-        // Force reload to update context
-        window.location.reload();
         return;
       }
 
@@ -75,8 +74,8 @@ export const StudentOnboarding: React.FC<{ onComplete: () => void }> = ({ onComp
           role: 'student',
           grade,
           city,
-          school_name: schoolName || null,
-          parent_id: parentId || null,
+          school_name: schoolName.trim() || null,
+          parent_id: parentId.trim() || null,
         })
         .eq('id', profile.id);
 
@@ -119,8 +118,8 @@ export const StudentOnboarding: React.FC<{ onComplete: () => void }> = ({ onComp
         }
       }
       
+      await refreshData();
       onComplete();
-      window.location.reload();
     } catch (err: any) {
       setError(err.message);
     } finally {

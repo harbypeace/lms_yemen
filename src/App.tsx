@@ -2,7 +2,6 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthPage } from './pages/AuthPage';
 import { Dashboard } from './pages/Dashboard';
 import { AcceptInvite } from './pages/AcceptInvite';
-import { AuthCallback } from './pages/AuthCallback';
 import { StudentOnboarding } from './components/StudentOnboarding';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -18,11 +17,6 @@ function AppContent() {
         <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
       </div>
     );
-  }
-
-  // Handle Auth Callback route separately
-  if (path === '/auth/callback') {
-    return <AuthCallback />;
   }
 
   // Handle Accept Invite route separately
