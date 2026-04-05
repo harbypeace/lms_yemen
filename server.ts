@@ -281,6 +281,216 @@ async function startServer() {
     }
   });
 
+  // Bulk Import Users
+  app.post('/api/admin/bulk-import', authenticateUser, async (req: any, res: any) => {
+    const { users, tenantId } = req.body;
+    const userId = req.user.id;
+
+    try {
+      // 1. Check if user is admin of the tenant
+      const { data: membership, error: memError } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (memError || !['super_admin', 'school_admin'].includes(membership?.role)) {
+        return res.status(403).json({ error: 'Unauthorized: Only admins can perform bulk imports' });
+      }
+
+      const results = { success: 0, errors: [] as any[] };
+
+      for (const user of users) {
+        try {
+          const { email, password, fullName, role, grade } = user;
+          
+          // Create Auth User
+          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email: email.toLowerCase(),
+            password: password || 'Nexus123!', // Default password if not provided
+            email_confirm: true,
+            user_metadata: { full_name: fullName, role: role || 'student' }
+          });
+
+          if (authError) throw authError;
+
+          const newUserId = authData.user.id;
+
+          // Update Profile (Trigger creates it, we update)
+          await new Promise(resolve => setTimeout(resolve, 200));
+          await supabaseAdmin.from('profiles').update({ grade, role: role || 'student' }).eq('id', newUserId);
+
+          // Add Membership
+          await supabaseAdmin.from('memberships').insert([{
+            user_id: newUserId,
+            tenant_id: tenantId,
+            role: role || 'student'
+          }]);
+
+          results.success++;
+        } catch (err: any) {
+          results.errors.push({ email: user.email, error: err.message });
+        }
+      }
+
+      // Log import
+      await supabaseAdmin.from('bulk_import_logs').insert([{
+        tenant_id: tenantId,
+        imported_by: userId,
+        total_records: users.length,
+        success_count: results.success,
+        error_count: results.errors.length,
+        errors: results.errors
+      }]);
+
+      res.json({ success: true, results });
+    } catch (err: any) {
+      console.error('Error in bulk import:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // List Parents with Phone Search
+  app.get('/api/admin/parents', authenticateUser, async (req: any, res: any) => {
+    const { tenantId, phone } = req.query;
+    const userId = req.user.id;
+
+    try {
+      // Check admin
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!['super_admin', 'school_admin', 'teacher'].includes(membership?.role)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      let query = supabaseAdmin
+        .from('profiles')
+        .select('*')
+        .eq('role', 'parent');
+
+      if (phone) {
+        query = query.ilike('phone', `%${phone}%`);
+      }
+
+      const { data: parents, error } = await query.limit(50);
+      if (error) throw error;
+
+      res.json({ success: true, parents });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Link Parent and Student
+  app.post('/api/admin/link-parent-student', authenticateUser, async (req: any, res: any) => {
+    const { parentId, studentId, tenantId } = req.body;
+    const userId = req.user.id;
+
+    try {
+      // Check admin
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!['super_admin', 'school_admin'].includes(membership?.role)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      // Update student profile with parent_id
+      const { error: updateError } = await supabaseAdmin
+        .from('profiles')
+        .update({ parent_id: parentId })
+        .eq('id', studentId);
+
+      if (updateError) throw updateError;
+
+      // Add to parent_student table
+      const { error: linkError } = await supabaseAdmin
+        .from('parent_student')
+        .upsert([{
+          parent_id: parentId,
+          student_id: studentId,
+          tenant_id: tenantId
+        }]);
+
+      if (linkError) throw linkError;
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Reset Password for User
+  app.post('/api/admin/reset-password', authenticateUser, async (req: any, res: any) => {
+    const { targetUserId, tenantId } = req.body;
+    const userId = req.user.id;
+
+    try {
+      // Check admin
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!['super_admin', 'school_admin'].includes(membership?.role)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { data: targetUser } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
+      if (!targetUser.user) return res.status(404).json({ error: 'User not found' });
+
+      // Generate password reset link
+      const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'recovery',
+        email: targetUser.user.email!,
+      });
+
+      if (error) throw error;
+
+      res.json({ success: true, resetLink: data.properties.action_link });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get Global Leaderboard
+  app.get('/api/leaderboard', authenticateUser, async (req: any, res: any) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('user_gamification')
+        .select(`
+          user_id,
+          total_xp,
+          level,
+          profiles (
+            full_name,
+            avatar_url
+          )
+        `)
+        .order('total_xp', { ascending: false })
+        .limit(10);
+      
+      if (error) throw error;
+
+      res.json({ success: true, leaderboard: data });
+    } catch (err: any) {
+      console.error('Error fetching leaderboard:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Get My Enrollments and Progress
   app.get('/api/my-enrollments', authenticateUser, async (req: any, res: any) => {
     const { tenantId } = req.query;

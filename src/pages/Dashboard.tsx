@@ -15,7 +15,9 @@ import {
   Building2,
   ChevronDown,
   Loader2,
-  Trophy
+  Trophy,
+  Upload,
+  CreditCard
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseList } from '../components/CourseList';
@@ -27,12 +29,15 @@ import { SchoolManagement } from '../components/SchoolManagement';
 import { Settings } from '../components/Settings';
 import { GamificationWidget } from '../components/GamificationWidget';
 import { GlobalLeaderboard } from '../components/GlobalLeaderboard';
+import { UserManagement } from '../components/UserManagement';
+import { BulkImport } from '../components/BulkImport';
+import { SubscriptionManagement } from '../components/SubscriptionManagement';
 import { GamificationOverlay } from '../components/GamificationOverlay';
 import { cn } from '../lib/utils';
 
 export const Dashboard: React.FC = () => {
   const { profile, activeTenant, memberships, setActiveTenant, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'my-courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings' | 'leaderboard'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'my-courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings' | 'leaderboard' | 'user-management' | 'bulk-import' | 'subscriptions'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
@@ -113,7 +118,7 @@ export const Dashboard: React.FC = () => {
     if (activeTab === 'dashboard') {
       loadDashboardData();
     }
-  }, [activeTenant, activeTab]);
+  }, [activeTenant, activeTab, profile]);
 
   const handleTabChange = (tab: any) => {
     setActiveTab(tab);
@@ -195,20 +200,36 @@ export const Dashboard: React.FC = () => {
             </>
           )}
           {(activeRole === 'super_admin' || activeRole === 'school_admin' || activeRole === 'teacher') && (
-            <SidebarItem 
-              icon={Users} 
-              label="Members" 
-              active={activeTab === 'members'} 
-              onClick={() => handleTabChange('members')}
-            />
+            <>
+              <SidebarItem 
+                icon={Users} 
+                label="Members" 
+                active={activeTab === 'members'} 
+                onClick={() => handleTabChange('members')}
+              />
+              <SidebarItem 
+                icon={Users} 
+                label="User Management" 
+                active={activeTab === 'user-management'} 
+                onClick={() => handleTabChange('user-management')}
+              />
+            </>
           )}
           {activeRole === 'student' && (
-            <SidebarItem 
-              icon={Trophy} 
-              label="My Progress" 
-              active={activeTab === 'progress'} 
-              onClick={() => handleTabChange('progress')}
-            />
+            <>
+              <SidebarItem 
+                icon={Trophy} 
+                label="My Progress" 
+                active={activeTab === 'progress'} 
+                onClick={() => handleTabChange('progress')}
+              />
+              <SidebarItem 
+                icon={CreditCard} 
+                label="Subscription" 
+                active={activeTab === 'subscriptions'} 
+                onClick={() => handleTabChange('subscriptions')}
+              />
+            </>
           )}
           {activeRole === 'parent' && (
             <SidebarItem 
@@ -435,7 +456,11 @@ export const Dashboard: React.FC = () => {
           
           {activeTab === 'members' && <MemberList />}
 
+          {activeTab === 'user-management' && <UserManagement />}
+
           {activeTab === 'progress' && <ProgressTracker />}
+
+          {activeTab === 'subscriptions' && <SubscriptionManagement />}
 
           {activeTab === 'leaderboard' && <GlobalLeaderboard />}
 

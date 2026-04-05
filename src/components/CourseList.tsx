@@ -237,7 +237,7 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
                   <div className="mb-4 space-y-1.5">
                     <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                       <span>Progress</span>
-                      <span>{course.completed_lessons} / {course.total_lessons} Lessons</span>
+                      <span>{(course.completed_lessons || 0)} / {(course.total_lessons || 0)} Lessons</span>
                     </div>
                     <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
                       <motion.div 

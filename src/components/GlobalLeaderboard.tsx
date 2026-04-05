@@ -20,25 +20,20 @@ export const GlobalLeaderboard: React.FC = () => {
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const { data, error } = await supabase
-          .from('user_gamification')
-          .select(`
-            user_id,
-            total_xp,
-            level,
-            profiles (
-              full_name,
-              avatar_url
-            )
-          `)
-          .order('total_xp', { ascending: false })
-          .limit(10);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
 
-        if (error) {
-          console.error('Error fetching global leaderboard:', error);
-        } else if (data) {
-          // @ts-ignore
-          setLeaderboard(data as LeaderboardEntry[]);
+        const response = await fetch('/api/leaderboard', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setLeaderboard(data.leaderboard as LeaderboardEntry[]);
+        } else {
+          throw new Error(data.error || 'Failed to fetch leaderboard');
         }
       } catch (err) {
         console.error('Unexpected error fetching global leaderboard:', err);
@@ -130,7 +125,7 @@ export const GlobalLeaderboard: React.FC = () => {
             </div>
             
             <div className="text-right">
-              <div className="text-lg font-black text-indigo-600">{entry.total_xp.toLocaleString()}</div>
+              <div className="text-lg font-black text-indigo-600">{(entry.total_xp || 0).toLocaleString()}</div>
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total XP</div>
             </div>
           </motion.div>
