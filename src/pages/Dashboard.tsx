@@ -17,7 +17,9 @@ import {
   Loader2,
   Trophy,
   Upload,
-  CreditCard
+  CreditCard,
+  CheckCircle,
+  Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseList } from '../components/CourseList';
@@ -33,16 +35,21 @@ import { UserManagement } from '../components/UserManagement';
 import { BulkImport } from '../components/BulkImport';
 import { SubscriptionManagement } from '../components/SubscriptionManagement';
 import { GamificationOverlay } from '../components/GamificationOverlay';
+import { ManagedUsers } from '../components/ManagedUsers';
 import { cn } from '../lib/utils';
+
+import { NotificationSystem } from '../components/NotificationSystem';
+import { PublicActivityFeed } from '../components/PublicActivityFeed';
+import { IntegrationManager } from '../components/IntegrationManager';
 
 export const Dashboard: React.FC = () => {
   const { profile, activeTenant, memberships, setActiveTenant, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'my-courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings' | 'leaderboard' | 'user-management' | 'bulk-import' | 'subscriptions'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'my-courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings' | 'leaderboard' | 'user-management' | 'bulk-import' | 'subscriptions' | 'integrations'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
 
-  const [dashboardStats, setDashboardStats] = useState({ courses: 0, members: 0, progress: 0 });
+  const [dashboardStats, setDashboardStats] = useState({ courses: 0, members: 0, progress: 0, enrolledCourses: 0, completedLessons: 0 });
   const [recentCourses, setRecentCourses] = useState<any[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
@@ -66,6 +73,9 @@ export const Dashboard: React.FC = () => {
 
         // Fetch user progress for average
         let userProgress = 0;
+        let enrolledCoursesCount = 0;
+        let completedLessonsCount = 0;
+
         if (profile?.id) {
           const { data: userEnrollments } = await supabase
             .from('enrollments')
@@ -74,6 +84,7 @@ export const Dashboard: React.FC = () => {
             .eq('tenant_id', activeTenant.id);
           
           if (userEnrollments && userEnrollments.length > 0) {
+            enrolledCoursesCount = userEnrollments.length;
             const courseIds = userEnrollments.map(e => e.course_id);
             const { data: lessons } = await supabase
               .from('lessons')
@@ -89,7 +100,8 @@ export const Dashboard: React.FC = () => {
                 .eq('completed', true)
                 .in('lesson_id', lessonIds);
               
-              userProgress = Math.round(((completedCount || 0) / lessonIds.length) * 100);
+              completedLessonsCount = completedCount || 0;
+              userProgress = Math.round((completedLessonsCount / lessonIds.length) * 100);
             }
           }
         }
@@ -105,7 +117,9 @@ export const Dashboard: React.FC = () => {
         setDashboardStats({
           courses: coursesCount || 0,
           members: membersCount || 0,
-          progress: userProgress
+          progress: userProgress,
+          enrolledCourses: enrolledCoursesCount,
+          completedLessons: completedLessonsCount
         });
         setRecentCourses(recent || []);
       } catch (error) {
@@ -125,7 +139,11 @@ export const Dashboard: React.FC = () => {
     setIsMobileMenuOpen(false);
   };
 
-  const stats = [
+  const stats = activeRole === 'student' ? [
+    { label: 'Enrolled Courses', value: dashboardStats.enrolledCourses.toString(), icon: BookOpen, color: 'bg-blue-500' },
+    { label: 'Completed Lessons', value: dashboardStats.completedLessons.toString(), icon: CheckCircle, color: 'bg-indigo-500' },
+    { label: 'Avg. Progress', value: `${dashboardStats.progress}%`, icon: GraduationCap, color: 'bg-emerald-500' },
+  ] : [
     { label: 'Active Courses', value: dashboardStats.courses.toString(), icon: BookOpen, color: 'bg-blue-500' },
     { label: 'Total Members', value: dashboardStats.members.toString(), icon: Users, color: 'bg-indigo-500' },
     { label: 'Avg. Progress', value: `${dashboardStats.progress}%`, icon: GraduationCap, color: 'bg-emerald-500' },
@@ -213,6 +231,14 @@ export const Dashboard: React.FC = () => {
                 active={activeTab === 'user-management'} 
                 onClick={() => handleTabChange('user-management')}
               />
+              {(activeRole === 'super_admin' || activeRole === 'school_admin') && (
+                <SidebarItem 
+                  icon={Share2} 
+                  label="Integrations" 
+                  active={activeTab === 'integrations'} 
+                  onClick={() => handleTabChange('integrations')}
+                />
+              )}
             </>
           )}
           {activeRole === 'student' && (
@@ -232,12 +258,20 @@ export const Dashboard: React.FC = () => {
             </>
           )}
           {activeRole === 'parent' && (
-            <SidebarItem 
-              icon={Users} 
-              label="My Children" 
-              active={activeTab === 'children'} 
-              onClick={() => handleTabChange('children')}
-            />
+            <>
+              <SidebarItem 
+                icon={Users} 
+                label="Managed Accounts" 
+                active={activeTab === 'children'} 
+                onClick={() => handleTabChange('children')}
+              />
+              <SidebarItem 
+                icon={CreditCard} 
+                label="Subscription" 
+                active={activeTab === 'subscriptions'} 
+                onClick={() => handleTabChange('subscriptions')}
+              />
+            </>
           )}
           <SidebarItem 
             icon={SettingsIcon} 
@@ -332,6 +366,7 @@ export const Dashboard: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 md:gap-4">
+            <NotificationSystem />
             <button
               onClick={async () => {
                 const { data: { session } } = await supabase.auth.getSession();
@@ -359,9 +394,13 @@ export const Dashboard: React.FC = () => {
         </header>
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-8">
-          {activeTab === 'dashboard' && (
+          {activeTab === 'dashboard' && activeRole === 'parent' && (
+            <ParentDashboard />
+          )}
+
+          {activeTab === 'dashboard' && activeRole !== 'parent' && (
             <>
-              <GamificationWidget />
+              {activeRole === 'student' && <GamificationWidget />}
               {/* Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {stats.map((stat, i) => (
@@ -388,7 +427,7 @@ export const Dashboard: React.FC = () => {
 
               {/* Recent Activity / Courses */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 space-y-8">
+                <div className={activeRole === 'student' ? "lg:col-span-2 space-y-8" : "lg:col-span-3 space-y-8"}>
                   <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-200 flex items-center justify-between">
                       <h3 className="font-bold text-slate-900">Recent Courses</h3>
@@ -441,9 +480,12 @@ export const Dashboard: React.FC = () => {
                   </section>
                 </div>
 
-                <div className="lg:col-span-1">
-                  <GlobalLeaderboard />
-                </div>
+                {activeRole === 'student' && (
+                  <div className="lg:col-span-1 space-y-8">
+                    <GlobalLeaderboard />
+                    <PublicActivityFeed />
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -460,11 +502,13 @@ export const Dashboard: React.FC = () => {
 
           {activeTab === 'progress' && <ProgressTracker />}
 
+          {activeTab === 'children' && <ManagedUsers />}
+
           {activeTab === 'subscriptions' && <SubscriptionManagement />}
 
           {activeTab === 'leaderboard' && <GlobalLeaderboard />}
 
-          {activeTab === 'children' && <ParentDashboard />}
+          {activeTab === 'integrations' && <IntegrationManager />}
 
           {activeTab === 'settings' && <Settings />}
         </div>

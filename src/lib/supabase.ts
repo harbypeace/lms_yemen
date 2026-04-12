@@ -49,3 +49,32 @@ export type Membership = {
   role: 'super_admin' | 'school_admin' | 'teacher' | 'student' | 'parent';
   tenants: Tenant;
 };
+
+export type Notification = {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  read: boolean;
+  link?: string;
+  created_at: string;
+};
+
+export type XApiStatement = {
+  id: string;
+  user_id: string;
+  tenant_id?: string;
+  verb: 'start' | 'end' | 'score' | 'store';
+  activity_id: string;
+  activity_type?: string;
+  score?: number;
+  max_score?: number;
+  success?: boolean;
+  completion?: boolean;
+  duration?: string;
+  metadata: any;
+  is_public: boolean;
+  created_at: string;
+};

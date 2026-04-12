@@ -133,6 +133,27 @@ async function startServer() {
 
       if (inviteError) throw inviteError;
 
+      // 3. If user exists, notify them
+      // We need to find the user by email using auth admin API
+      const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
+      const existingUser = usersData?.users?.find((u: any) => u.email === email.toLowerCase());
+
+      if (existingUser) {
+        const { data: tenant } = await supabaseAdmin
+          .from('tenants')
+          .select('name')
+          .eq('id', tenantId)
+          .single();
+
+        await supabaseAdmin.rpc('create_notification', {
+          p_tenant_id: tenantId,
+          p_user_id: existingUser.id,
+          p_title: 'New Invitation',
+          p_message: `You have been invited to join ${tenant?.name || 'a school'} as a ${role}.`,
+          p_type: 'info'
+        });
+      }
+
       res.status(201).json({ success: true, invitation });
     } catch (err: any) {
       console.error('Error sending invitation:', err);
@@ -220,6 +241,15 @@ async function startServer() {
             student_id: studentId,
             tenant_id: generalTenant.id
           }]);
+
+        // 7. Notify student
+        await supabaseAdmin.rpc('create_notification', {
+          p_tenant_id: generalTenant.id,
+          p_user_id: studentId,
+          p_title: 'Welcome to Nexus!',
+          p_message: `Your account has been created by your parent.`,
+          p_type: 'info'
+        });
       }
 
       res.status(201).json({ success: true, studentId });
@@ -272,6 +302,23 @@ async function startServer() {
         .single();
 
       if (enrollError) throw enrollError;
+
+      // 4. Create notification for the user
+      const { data: course } = await supabaseAdmin
+        .from('courses')
+        .select('title')
+        .eq('id', courseId)
+        .single();
+
+      if (course) {
+        await supabaseAdmin.rpc('create_notification', {
+          p_tenant_id: tenantId,
+          p_user_id: userId,
+          p_title: 'Course Enrollment',
+          p_message: `You have successfully enrolled in ${course.title}.`,
+          p_type: 'success'
+        });
+      }
 
       res.status(201).json({ success: true, enrollment });
     } catch (err: any) {
@@ -465,6 +512,38 @@ async function startServer() {
     }
   });
 
+  // Create Subscription
+  app.post('/api/subscriptions', authenticateUser, async (req: any, res: any) => {
+    const { tenantId, planName } = req.body;
+    const userId = req.user.id;
+
+    try {
+      // Calculate end date (30 days from now for monthly plans)
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(startDate.getDate() + 30);
+
+      const { data, error } = await supabaseAdmin
+        .from('subscriptions')
+        .insert([{
+          user_id: userId,
+          tenant_id: tenantId,
+          plan_name: planName,
+          status: 'active',
+          start_date: startDate.toISOString(),
+          end_date: endDate.toISOString()
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, subscription: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Get Global Leaderboard
   app.get('/api/leaderboard', authenticateUser, async (req: any, res: any) => {
     try {
@@ -610,6 +689,27 @@ async function startServer() {
         .single();
       
       if (courseError) throw courseError;
+
+      // 3. Notify all students in the tenant
+      const { data: students } = await supabaseAdmin
+        .from('memberships')
+        .select('user_id')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'student');
+
+      if (students && students.length > 0) {
+        const notifications = students.map(student => ({
+          tenant_id: tenantId,
+          user_id: student.user_id,
+          title: 'New Course Available',
+          message: `A new course "${title}" has been added.`,
+          type: 'info'
+        }));
+
+        await supabaseAdmin
+          .from('notifications')
+          .insert(notifications);
+      }
 
       res.status(201).json({ success: true, course: courseData });
     } catch (err: any) {
@@ -829,9 +929,236 @@ async function startServer() {
         }
       ]);
 
+      // 11. Notify students
+      const { data: students } = await supabaseAdmin
+        .from('memberships')
+        .select('user_id')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'student');
+
+      if (students && students.length > 0) {
+        const notifications = students.map(student => ({
+          tenant_id: tenantId,
+          user_id: student.user_id,
+          title: 'Demo Course Available',
+          message: `A new demo course has been generated.`,
+          type: 'info'
+        }));
+
+        await supabaseAdmin
+          .from('notifications')
+          .insert(notifications);
+      }
+
       res.status(201).json({ success: true, course: courseData });
     } catch (err: any) {
       console.error('Error generating demo:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // xAPI Lite Endpoints
+  app.post('/api/xapi/start', authenticateUser, async (req: any, res: any) => {
+    const { activityId, activityType, tenantId, metadata, isPublic } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data, error } = await supabaseAdmin.rpc('xapi_start', {
+        p_activity_id: activityId,
+        p_activity_type: activityType,
+        p_tenant_id: tenantId,
+        p_metadata: metadata || {},
+        p_is_public: isPublic || false
+      });
+
+      if (error) throw error;
+      res.status(201).json({ success: true, id: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/xapi/end', authenticateUser, async (req: any, res: any) => {
+    const { activityId, activityType, success, completion, duration, tenantId, metadata, isPublic } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data, error } = await supabaseAdmin.rpc('xapi_end', {
+        p_activity_id: activityId,
+        p_activity_type: activityType,
+        p_success: success,
+        p_completion: completion,
+        p_duration: duration,
+        p_tenant_id: tenantId,
+        p_metadata: metadata || {},
+        p_is_public: isPublic || false
+      });
+
+      if (error) throw error;
+      res.status(201).json({ success: true, id: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/xapi/score', authenticateUser, async (req: any, res: any) => {
+    const { activityId, score, maxScore, activityType, tenantId, metadata, isPublic } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data, error } = await supabaseAdmin.rpc('xapi_score', {
+        p_activity_id: activityId,
+        p_score: score,
+        p_max_score: maxScore || 100,
+        p_activity_type: activityType,
+        p_tenant_id: tenantId,
+        p_metadata: metadata || {},
+        p_is_public: isPublic || false
+      });
+
+      if (error) throw error;
+      res.status(201).json({ success: true, id: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/xapi/store', authenticateUser, async (req: any, res: any) => {
+    const { activityId, verb, activityType, tenantId, metadata, isPublic } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data, error } = await supabaseAdmin.rpc('xapi_store', {
+        p_activity_id: activityId,
+        p_verb: verb,
+        p_activity_type: activityType,
+        p_tenant_id: tenantId,
+        p_metadata: metadata || {},
+        p_is_public: isPublic || false
+      });
+
+      if (error) throw error;
+      res.status(201).json({ success: true, id: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/xapi/public', async (req: any, res: any) => {
+    const { activityId } = req.query;
+
+    try {
+      let query = supabaseAdmin
+        .from('xapi_statements')
+        .select('*, profiles(full_name, avatar_url)')
+        .eq('is_public', true)
+        .order('created_at', { ascending: false });
+
+      if (activityId) {
+        query = query.eq('activity_id', activityId);
+      }
+
+      const { data, error } = await query.limit(50);
+
+      if (error) throw error;
+      res.json({ success: true, statements: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Integrations & Sync Endpoints
+  app.post('/api/integrations', authenticateUser, async (req: any, res: any) => {
+    const { name, provider, endpointUrl, apiKey, events, tenantId } = req.body;
+    const userId = req.user.id;
+
+    try {
+      // Verify admin role
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!membership || !['super_admin', 'school_admin'].includes(membership.role)) {
+        return res.status(403).json({ error: 'Unauthorized: Only admins can manage integrations' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('integrations')
+        .insert([{
+          name,
+          provider,
+          endpoint_url: endpointUrl,
+          api_key: apiKey,
+          events: events || [],
+          tenant_id: tenantId,
+          created_by: userId
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ success: true, integration: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/sync/trigger', authenticateUser, async (req: any, res: any) => {
+    const { integrationId, eventType, payload } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data: integration, error: intError } = await supabaseAdmin
+        .from('integrations')
+        .select('*')
+        .eq('id', integrationId)
+        .single();
+
+      if (intError || !integration) {
+        return res.status(404).json({ error: 'Integration not found' });
+      }
+
+      // Simulate external sync
+      const syncStatus = Math.random() > 0.1 ? 'success' : 'failed';
+      const errorMessage = syncStatus === 'failed' ? 'Connection timeout' : null;
+
+      const { data: log, error: logError } = await supabaseAdmin
+        .from('sync_logs')
+        .insert([{
+          integration_id: integrationId,
+          event_type: eventType,
+          status: syncStatus,
+          request_payload: payload,
+          response_payload: { status: syncStatus, timestamp: new Date().toISOString() },
+          error_message: errorMessage
+        }])
+        .select()
+        .single();
+
+      if (logError) throw logError;
+
+      res.json({ success: syncStatus === 'success', log });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // User Hierarchy Endpoints
+  app.get('/api/managed-users', authenticateUser, async (req: any, res: any) => {
+    const userId = req.user.id;
+
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('profiles')
+        .select('*')
+        .eq('parent_id', userId);
+
+      if (error) throw error;
+      res.json({ success: true, users: data });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });

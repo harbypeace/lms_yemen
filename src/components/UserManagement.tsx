@@ -45,7 +45,7 @@ export const UserManagement: React.FC = () => {
         .from('profiles')
         .select('*, memberships!inner(*)')
         .eq('memberships.tenant_id', activeTenant?.id)
-        .eq('role', activeTab === 'students' ? 'student' : 'parent')
+        .eq('memberships.role', activeTab === 'students' ? 'student' : 'parent')
         .ilike('full_name', `%${searchQuery}%`)
         .limit(50);
 

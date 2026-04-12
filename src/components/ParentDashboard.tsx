@@ -37,6 +37,7 @@ export const ParentDashboard: React.FC = () => {
   const [studentUsername, setStudentUsername] = useState('');
   const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
   // Add Child Form
   const [newChild, setNewChild] = useState({
@@ -344,6 +345,14 @@ export const ParentDashboard: React.FC = () => {
               {error}
             </div>
           )}
+          {status && (
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium animate-pulse ${
+              status.type === 'success' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-red-600 bg-red-50 border-red-100'
+            }`}>
+              {status.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+              {status.message}
+            </div>
+          )}
           <div className="bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm flex items-center gap-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Your Parent ID:</span>
             <code className="text-sm font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
@@ -355,7 +364,8 @@ export const ParentDashboard: React.FC = () => {
                 const idToCopy = (profile as any)?.custom_id || user?.id;
                 if (idToCopy) {
                   navigator.clipboard.writeText(idToCopy);
-                  alert('Parent ID copied to clipboard!');
+                  setStatus({ type: 'success', message: 'Parent ID copied to clipboard!' });
+                  setTimeout(() => setStatus(null), 3000);
                 }
               }}
               className="text-xs text-slate-500 hover:text-indigo-600 underline ml-2"

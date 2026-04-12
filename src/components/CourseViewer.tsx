@@ -6,7 +6,11 @@ import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { LessonContent } from './LessonContent';
 import { CourseLeaderboard } from './CourseLeaderboard';
+import { QuizViewer } from './QuizViewer';
+import { QuizManager } from './QuizManager';
+import { NoteSection } from './NoteSection';
 import { useGamification } from '../hooks/useGamification';
+import { xapiLite } from '../services/xapiService';
 
 interface CourseViewerProps {
   courseId: string;
@@ -14,13 +18,18 @@ interface CourseViewerProps {
 }
 
 export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) => {
-  const { user, progress, setProgress } = useAuth();
+  const { user, progress, setProgress, memberships, activeTenant } = useAuth();
   const { trackEvent, checkCourseCompletion } = useGamification();
+  
+  const myRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
+  const isAdmin = ['super_admin', 'school_admin', 'teacher'].includes(myRole || '');
+
   const [course, setCourse] = useState<any>(null);
   const [modules, setModules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'content' | 'quiz' | 'notes' | 'manage'>('content');
 
   useEffect(() => {
     fetchCourseData();
@@ -64,8 +73,22 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
     }
   };
 
+  useEffect(() => {
+    if (selectedLessonId && course) {
+      const lesson = modules.flatMap(m => m.lessons).find(l => l.id === selectedLessonId);
+      if (lesson) {
+        xapiLite.start({
+          activityId: lesson.title,
+          activityType: 'lesson',
+          tenantId: course.tenant_id,
+          metadata: { lessonId: selectedLessonId, courseId: course.id }
+        });
+      }
+    }
+  }, [selectedLessonId, course]);
+
   const toggleLessonCompletion = async (lessonId: string, score?: number) => {
-    if (!user) return;
+    if (!user || !course) return;
     
     const isCompleted = !!progress[lessonId];
     if (isCompleted && !score) return; // Don't allow un-completing, but allow updating score
@@ -86,6 +109,31 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
         });
 
       if (error) throw error;
+
+      // Track xAPI Lite end
+      const lesson = modules.flatMap(m => m.lessons).find(l => l.id === lessonId);
+      if (lesson) {
+        xapiLite.end({
+          activityId: lesson.title,
+          activityType: 'lesson',
+          success: true,
+          completion: true,
+          tenantId: course.tenant_id,
+          isPublic: true, // Make some events public for the feed
+          metadata: { lessonId, courseId: course.id, score }
+        });
+
+        if (score) {
+          xapiLite.score({
+            activityId: lesson.title,
+            score: score,
+            activityType: 'lesson',
+            tenantId: course.tenant_id,
+            isPublic: true,
+            metadata: { lessonId, courseId: course.id }
+          });
+        }
+      }
 
       setProgress(prev => ({
         ...prev,
@@ -219,13 +267,73 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
                   )}
                 </div>
                 <h1 className="text-3xl font-bold text-slate-900">{selectedLesson.title}</h1>
+
+                <div className="flex items-center gap-6 mt-8 border-b border-slate-100">
+                  <button
+                    onClick={() => setActiveTab('content')}
+                    className={cn(
+                      "pb-4 text-sm font-bold uppercase tracking-widest transition-all border-b-2",
+                      activeTab === 'content' ? "text-indigo-600 border-indigo-600" : "text-slate-400 border-transparent hover:text-slate-600"
+                    )}
+                  >
+                    Lesson
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('quiz')}
+                    className={cn(
+                      "pb-4 text-sm font-bold uppercase tracking-widest transition-all border-b-2",
+                      activeTab === 'quiz' ? "text-indigo-600 border-indigo-600" : "text-slate-400 border-transparent hover:text-slate-600"
+                    )}
+                  >
+                    Quiz
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('notes')}
+                    className={cn(
+                      "pb-4 text-sm font-bold uppercase tracking-widest transition-all border-b-2",
+                      activeTab === 'notes' ? "text-indigo-600 border-indigo-600" : "text-slate-400 border-transparent hover:text-slate-600"
+                    )}
+                  >
+                    Notes
+                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setActiveTab('manage')}
+                      className={cn(
+                        "pb-4 text-sm font-bold uppercase tracking-widest transition-all border-b-2",
+                        activeTab === 'manage' ? "text-indigo-600 border-indigo-600" : "text-slate-400 border-transparent hover:text-slate-600"
+                      )}
+                    >
+                      Manage
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <LessonContent 
-                lessonId={selectedLesson.id} 
-                isCompleted={!!progress[selectedLesson.id]}
-                onComplete={(score) => toggleLessonCompletion(selectedLesson.id, score)}
-              />
+              {activeTab === 'content' && (
+                <LessonContent 
+                  lessonId={selectedLesson.id} 
+                  isCompleted={!!progress[selectedLesson.id]}
+                  onComplete={(score) => toggleLessonCompletion(selectedLesson.id, score)}
+                />
+              )}
+
+              {activeTab === 'quiz' && (
+                <QuizViewer targetId={selectedLesson.id} targetType="lesson" />
+              )}
+
+              {activeTab === 'notes' && (
+                <NoteSection targetId={selectedLesson.id} targetType="lesson" />
+              )}
+
+              {activeTab === 'manage' && isAdmin && (
+                <div className="space-y-8">
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900 mb-4">Lesson Quiz Management</h3>
+                    <QuizManager targetId={selectedLesson.id} targetType="lesson" />
+                  </div>
+                </div>
+              )}
 
               {/* Navigation Footer */}
               <div className="flex items-center justify-between pt-8 border-t border-slate-100">
