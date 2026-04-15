@@ -125,7 +125,16 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
   };
 
   if (loading) return <div className="p-8 text-center"><RefreshCw className="w-8 h-8 animate-spin mx-auto text-indigo-600" /></div>;
-  if (!quiz) return null;
+  
+  if (!quiz) {
+    return (
+      <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-sm text-center">
+        <HelpCircle className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+        <h3 className="text-xl font-bold text-slate-900">No Quiz Available</h3>
+        <p className="text-slate-500 mt-2">There is no assessment for this lesson yet.</p>
+      </div>
+    );
+  }
 
   if (showResults) {
     const passed = score >= quiz.passing_score;
@@ -159,6 +168,16 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
           Try Again
         </button>
       </motion.div>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-sm text-center">
+        <HelpCircle className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+        <h3 className="text-xl font-bold text-slate-900">Quiz is Empty</h3>
+        <p className="text-slate-500 mt-2">This quiz has no questions yet.</p>
+      </div>
     );
   }
 

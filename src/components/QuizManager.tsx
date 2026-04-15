@@ -98,17 +98,19 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ targetId, targetType }
       }
 
       // Save questions
-      // Simple approach: delete all and re-insert (or use upsert if we have IDs)
+      // Simple approach: delete all and re-insert
       if (quizId) {
         await supabase.from('questions').delete().eq('quiz_id', quizId);
         if (questions.length > 0) {
-          await supabase.from('questions').insert(
-            questions.map((q, idx) => ({
-              ...q,
+          const questionsToInsert = questions.map((q, idx) => {
+            const { id, ...rest } = q;
+            return {
+              ...rest,
               quiz_id: quizId,
               order_index: idx
-            }))
-          );
+            };
+          });
+          await supabase.from('questions').insert(questionsToInsert);
         }
       }
 

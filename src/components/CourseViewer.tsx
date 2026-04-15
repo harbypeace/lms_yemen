@@ -8,9 +8,11 @@ import { LessonContent } from './LessonContent';
 import { CourseLeaderboard } from './CourseLeaderboard';
 import { QuizViewer } from './QuizViewer';
 import { QuizManager } from './QuizManager';
+import { LessonAdaptiveEditor } from './LessonAdaptiveEditor';
 import { NoteSection } from './NoteSection';
 import { useGamification } from '../hooks/useGamification';
 import { xapiLite } from '../services/xapiService';
+import { adaptiveEngine } from '../services/adaptiveEngine';
 
 interface CourseViewerProps {
   courseId: string;
@@ -329,6 +331,10 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
               {activeTab === 'manage' && isAdmin && (
                 <div className="space-y-8">
                   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900 mb-4">Adaptive Engine Settings</h3>
+                    <LessonAdaptiveEditor lessonId={selectedLesson.id} tenantId={activeTenant?.id || ''} />
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                     <h3 className="text-lg font-bold text-slate-900 mb-4">Lesson Quiz Management</h3>
                     <QuizManager targetId={selectedLesson.id} targetType="lesson" />
                   </div>
@@ -350,10 +356,19 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
                   Previous Lesson
                 </button>
                 <button
-                  onClick={() => {
-                    const allLessons = modules.flatMap(m => m.lessons);
-                    const idx = allLessons.findIndex(l => l.id === selectedLessonId);
-                    if (idx < allLessons.length - 1) setSelectedLessonId(allLessons[idx + 1].id);
+                  onClick={async () => {
+                    if (!user || !selectedLessonId || !activeTenant) return;
+                    
+                    const nextId = await adaptiveEngine.getNextLesson(user.id, selectedLessonId, activeTenant.id);
+                    
+                    if (nextId) {
+                      setSelectedLessonId(nextId);
+                      setActiveTab('content');
+                    } else {
+                      const allLessons = modules.flatMap(m => m.lessons);
+                      const idx = allLessons.findIndex(l => l.id === selectedLessonId);
+                      if (idx < allLessons.length - 1) setSelectedLessonId(allLessons[idx + 1].id);
+                    }
                   }}
                   disabled={modules.flatMap(m => m.lessons).findIndex(l => l.id === selectedLessonId) === modules.flatMap(m => m.lessons).length - 1}
                   className="flex items-center gap-2 text-indigo-600 hover:text-indigo-700 font-bold disabled:opacity-30 transition-all"

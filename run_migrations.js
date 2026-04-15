@@ -5,31 +5,45 @@ import path from 'path';
 
 dotenv.config();
 
-const { Pool } = pg;
-
-const pool = new Pool({
-  connectionString: "postgresql://postgres.okpruwomwojoshrbdewg:sb_publishable_2DaEOu1x78bzJPOkz-lGKA_DNXRfe6v@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
-});
+const { Client } = pg;
 
 async function runMigrations() {
-  const client = await pool.connect();
-  try {
-    const migrationsDir = path.join(process.cwd(), 'supabase', 'migrations');
-    const files = fs.readdirSync(migrationsDir).sort();
+  const password = process.env.SUPABASE_DB_PASSWORD;
+  if (!password) {
+    console.error('No SUPABASE_DB_PASSWORD found in .env');
+    return;
+  }
 
-    for (const file of files) {
-      if (file.endsWith('.sql')) {
-        console.log(`Running migration: ${file}`);
-        const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+  const connectionString = `postgresql://postgres:${password}@db.okpruwomwojoshrbdewg.supabase.co:5432/postgres`;
+  const client = new Client({ connectionString });
+
+  try {
+    await client.connect();
+    console.log('Connected to Supabase DB.');
+
+    const migrationsDir = path.join(process.cwd(), 'supabase', 'migrations');
+    
+    // Only run the new migrations
+    const filesToRun = [
+      '20240402005000_integrations_and_sync.sql',
+      '20240402006000_quizzes_and_notes.sql',
+      '20240402007000_adaptive_slide_engine.sql'
+    ];
+
+    for (const file of filesToRun) {
+      console.log(`Running migration: ${file}`);
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+      try {
         await client.query(sql);
         console.log(`Successfully ran migration: ${file}`);
+      } catch (e) {
+        console.error(`Error running ${file}:`, e.message);
       }
     }
   } catch (err) {
     console.error('Error running migrations:', err);
   } finally {
-    client.release();
-    await pool.end();
+    await client.end();
   }
 }
 

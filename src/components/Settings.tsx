@@ -1,17 +1,75 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { User, Lock, MapPin, Phone, Building, Loader2, Save, Users, GraduationCap, ChevronDown } from 'lucide-react';
+import { User, Lock, MapPin, Phone, Building, Loader2, Save, Users, GraduationCap, ChevronDown, Zap, Target, CheckCircle } from 'lucide-react';
 import { motion } from 'motion/react';
+import { cn } from '../lib/utils';
 
 export const Settings: React.FC = () => {
   const { user, profile, refreshData } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [prefsLoading, setPrefsLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [prefsSuccess, setPrefsSuccess] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+
+  // Adaptive Prefs State
+  const [learningPrefs, setLearningPrefs] = useState({
+    preferred_style: 'visual',
+    difficulty_level: 'intermediate'
+  });
+
+  useEffect(() => {
+    if (user) {
+      fetchLearningPrefs();
+    }
+  }, [user]);
+
+  const fetchLearningPrefs = async () => {
+    try {
+      const { data } = await supabase
+        .from('user_learning_preferences')
+        .select('*')
+        .eq('user_id', user?.id)
+        .maybeSingle();
+      
+      if (data) {
+        setLearningPrefs({
+          preferred_style: data.preferred_style,
+          difficulty_level: data.difficulty_level
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching prefs:', err);
+    }
+  };
+
+  const handlePrefsUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    setPrefsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('user_learning_preferences')
+        .upsert({
+          user_id: user.id,
+          ...learningPrefs,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      setPrefsSuccess('Learning preferences updated!');
+      setTimeout(() => setPrefsSuccess(null), 3000);
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setPrefsLoading(false);
+    }
+  };
 
   // Profile Form State
   const [formData, setFormData] = useState({
@@ -334,6 +392,92 @@ export const Settings: React.FC = () => {
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   Save Profile
+                </button>
+              </div>
+            </form>
+          </motion.div>
+
+          {/* Learning Preferences */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+          >
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-amber-500" />
+                Adaptive Learning Engine
+              </h3>
+            </div>
+            
+            <form onSubmit={handlePrefsUpdate} className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                    <Target className="w-4 h-4 text-indigo-600" />
+                    Learning Style
+                  </label>
+                  <p className="text-xs text-slate-500 mb-3">The engine will prioritize content matching your style.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['visual', 'auditory', 'reading', 'kinesthetic'].map(style => (
+                      <button
+                        key={style}
+                        type="button"
+                        onClick={() => setLearningPrefs({ ...learningPrefs, preferred_style: style })}
+                        className={cn(
+                          "px-3 py-2 rounded-xl border-2 text-xs font-bold capitalize transition-all",
+                          learningPrefs.preferred_style === style 
+                            ? "bg-indigo-50 border-indigo-600 text-indigo-700" 
+                            : "bg-white border-slate-100 text-slate-500 hover:border-slate-200"
+                        )}
+                      >
+                        {style}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                    <GraduationCap className="w-4 h-4 text-indigo-600" />
+                    Preferred Difficulty
+                  </label>
+                  <p className="text-xs text-slate-500 mb-3">Adjust the initial difficulty of recommended lessons.</p>
+                  <div className="space-y-2">
+                    {['beginner', 'intermediate', 'advanced'].map(level => (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => setLearningPrefs({ ...learningPrefs, difficulty_level: level })}
+                        className={cn(
+                          "w-full px-4 py-2 rounded-xl border-2 text-xs font-bold capitalize transition-all flex items-center justify-between",
+                          learningPrefs.difficulty_level === level 
+                            ? "bg-indigo-50 border-indigo-600 text-indigo-700" 
+                            : "bg-white border-slate-100 text-slate-500 hover:border-slate-200"
+                        )}
+                      >
+                        {level}
+                        {learningPrefs.difficulty_level === level && <CheckCircle className="w-4 h-4" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {prefsSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-600 text-sm rounded-lg">
+                  {prefsSuccess}
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={prefsLoading}
+                  className="px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-70 shadow-lg shadow-indigo-100"
+                >
+                  {prefsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Save Preferences
                 </button>
               </div>
             </form>

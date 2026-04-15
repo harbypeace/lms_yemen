@@ -1121,9 +1121,45 @@ async function startServer() {
         return res.status(404).json({ error: 'Integration not found' });
       }
 
-      // Simulate external sync
-      const syncStatus = Math.random() > 0.1 ? 'success' : 'failed';
-      const errorMessage = syncStatus === 'failed' ? 'Connection timeout' : null;
+      let syncStatus = 'failed';
+      let errorMessage = null;
+      let responsePayload = null;
+
+      try {
+        // Actual external sync
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        
+        if (integration.api_key) {
+          headers['Authorization'] = `Bearer ${integration.api_key}`;
+        }
+
+        const response = await fetch(integration.endpoint_url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            event: eventType,
+            data: payload,
+            timestamp: new Date().toISOString()
+          })
+        });
+
+        const responseText = await response.text();
+        try {
+          responsePayload = JSON.parse(responseText);
+        } catch (e) {
+          responsePayload = { raw: responseText };
+        }
+
+        if (response.ok) {
+          syncStatus = 'success';
+        } else {
+          errorMessage = `HTTP Error: ${response.status} ${response.statusText}`;
+        }
+      } catch (fetchError: any) {
+        errorMessage = fetchError.message || 'Connection failed';
+      }
 
       const { data: log, error: logError } = await supabaseAdmin
         .from('sync_logs')
@@ -1132,7 +1168,7 @@ async function startServer() {
           event_type: eventType,
           status: syncStatus,
           request_payload: payload,
-          response_payload: { status: syncStatus, timestamp: new Date().toISOString() },
+          response_payload: responsePayload,
           error_message: errorMessage
         }])
         .select()
@@ -1144,6 +1180,21 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Test Webhook Endpoint (For testing integrations)
+  app.post('/api/test-webhook', (req: any, res: any) => {
+    console.log('Received Test Webhook:', req.body);
+    console.log('Headers:', req.headers);
+    
+    // Simulate processing time
+    setTimeout(() => {
+      res.status(200).json({ 
+        received: true, 
+        message: 'Webhook processed successfully',
+        echo: req.body 
+      });
+    }, 500);
   });
 
   // User Hierarchy Endpoints
