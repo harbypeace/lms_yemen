@@ -37,19 +37,18 @@ export const adaptiveEngine = {
       // 3. Get Latest Performance for THIS lesson's quiz
       const { data: quiz } = await supabase
         .from('quizzes')
-        .select('id')
-        .eq('target_id', currentLessonId)
-        .eq('target_type', 'lesson')
+        .select('quiz_id')
+        .eq('lesson_id', currentLessonId)
         .maybeSingle();
 
       let score = 0;
       if (quiz) {
         const { data: lastAttempt } = await supabase
-          .from('quiz_attempts')
+          .from('quiz_submissions')
           .select('score, passed')
           .eq('user_id', userId)
-          .eq('quiz_id', quiz.id)
-          .order('completed_at', { ascending: false })
+          .eq('quiz_id', quiz.quiz_id)
+          .order('submitted_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         

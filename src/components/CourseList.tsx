@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Book, ChevronRight, Plus, Search, X, Loader2, GraduationCap, CheckCircle, Zap } from 'lucide-react';
+import { Book, ChevronRight, Plus, Search, X, Loader2, GraduationCap, CheckCircle, Zap, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '../lib/utils';
 import { CourseViewer } from './CourseViewer';
 
 export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled = false }) => {
@@ -10,11 +11,12 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newCourse, setNewCourse] = useState({ title: '', description: '' });
+  const [newCourse, setNewCourse] = useState<{title: string, description: string, prerequisites: string[]}>({ title: '', description: '', prerequisites: [] });
   const [creating, setCreating] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState<string | null>(null);
   const [generatingDemo, setGeneratingDemo] = useState(false);
+  const [completedCourses, setCompletedCourses] = useState<string[]>([]);
 
   const myRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
   const isAdminOrTeacher = ['super_admin', 'school_admin', 'teacher'].includes(myRole || '');
@@ -22,8 +24,26 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
   useEffect(() => {
     if (activeTenant) {
       fetchCourses();
+      fetchCompletedCourses();
     }
   }, [activeTenant, user, onlyEnrolled, enrollments]);
+
+  const fetchCompletedCourses = async () => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('learning_events')
+        .select('course_id')
+        .eq('user_id', user.id)
+        .eq('event_type', 'course_completed');
+      
+      if (data) {
+        setCompletedCourses(data.map(d => d.course_id).filter(Boolean));
+      }
+    } catch (err) {
+      console.error('Error fetching completed courses:', err);
+    }
+  };
 
   const fetchCourses = async () => {
     setLoading(true);
@@ -78,7 +98,8 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
         body: JSON.stringify({
           title: newCourse.title,
           description: newCourse.description,
-          tenantId: activeTenant.id
+          tenantId: activeTenant.id,
+          prerequisites: newCourse.prerequisites
         })
       });
 
@@ -90,7 +111,7 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
 
       setCourses([data.course, ...courses]);
       setIsModalOpen(false);
-      setNewCourse({ title: '', description: '' });
+      setNewCourse({ title: '', description: '', prerequisites: [] });
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -172,6 +193,11 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
     }
   };
 
+  const arePrerequisitesMet = (course: any) => {
+    if (!course.prerequisites || course.prerequisites.length === 0) return true;
+    return course.prerequisites.every((prereqId: string) => completedCourses.includes(prereqId));
+  };
+
   if (selectedCourseId) {
     return <CourseViewer courseId={selectedCourseId} onBack={() => setSelectedCourseId(null)} />;
   }
@@ -220,58 +246,85 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
         </div>
       ) : courses.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.map((course) => (
-            <motion.div
-              key={course.id}
-              whileHover={{ y: -4 }}
-              className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden group transition-all"
-            >
-              <div className="h-32 bg-slate-100 flex items-center justify-center group-hover:bg-indigo-50 transition-all">
-                <Book className="w-12 h-12 text-slate-300 group-hover:text-indigo-400" />
-              </div>
-              <div className="p-6">
-                <h3 className="font-bold text-slate-900 text-lg mb-2">{course.title}</h3>
-                <p className="text-slate-500 text-sm line-clamp-2 mb-4">{course.description}</p>
-                
-                {onlyEnrolled && (
-                  <div className="mb-4 space-y-1.5">
-                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      <span>Progress</span>
-                      <span>{(course.completed_lessons || 0)} / {(course.total_lessons || 0)} Lessons</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${course.progress_percent}%` }}
-                        className="h-full bg-indigo-600 rounded-full"
-                      />
-                    </div>
-                  </div>
+          {courses.map((course) => {
+            const isLocked = !arePrerequisitesMet(course);
+            
+            return (
+              <motion.div
+                key={course.id}
+                whileHover={!isLocked ? { y: -4 } : {}}
+                className={cn(
+                  "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all",
+                  isLocked ? "opacity-75" : "group"
                 )}
-
-                <div className="flex items-center justify-between">
-                  {enrollments[course.id] ? (
-                    <button 
-                      onClick={() => setSelectedCourseId(course.id)}
-                      className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:underline"
-                    >
-                      <GraduationCap className="w-4 h-4" />
-                      View Course
-                    </button>
+              >
+                <div className="h-32 bg-slate-100 flex items-center justify-center group-hover:bg-indigo-50 transition-all relative">
+                  {isLocked ? (
+                    <Lock className="w-12 h-12 text-slate-300" />
                   ) : (
-                    <button 
-                      onClick={() => handleEnroll(course.id)}
-                      disabled={enrolling === course.id}
-                      className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
-                    >
-                      {enrolling === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enroll Now'}
-                    </button>
+                    <Book className="w-12 h-12 text-slate-300 group-hover:text-indigo-400" />
                   )}
-                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500" />
+                  {isLocked && (
+                    <div className="absolute inset-0 bg-slate-900/5 flex items-center justify-center backdrop-blur-[1px]">
+                      <span className="bg-white/90 px-3 py-1 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-1">
+                        <Lock className="w-3 h-3" /> Locked
+                      </span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </motion.div>
-          ))}
+                <div className="p-6">
+                  <h3 className="font-bold text-slate-900 text-lg mb-2">{course.title}</h3>
+                  <p className="text-slate-500 text-sm line-clamp-2 mb-4">{course.description}</p>
+                  
+                  {onlyEnrolled && (
+                    <div className="mb-4 space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <span>Progress</span>
+                        <span>{(course.completed_lessons || 0)} / {(course.total_lessons || 0)} Lessons</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${course.progress_percent}%` }}
+                          className="h-full bg-indigo-600 rounded-full"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    {enrollments[course.id] ? (
+                      <button 
+                        onClick={() => !isLocked && setSelectedCourseId(course.id)}
+                        disabled={isLocked}
+                        className={cn(
+                          "flex items-center gap-2 font-bold text-sm",
+                          isLocked ? "text-slate-400 cursor-not-allowed" : "text-indigo-600 hover:underline"
+                        )}
+                      >
+                        <GraduationCap className="w-4 h-4" />
+                        View Course
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => !isLocked && handleEnroll(course.id)}
+                        disabled={enrolling === course.id || isLocked}
+                        className={cn(
+                          "px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg",
+                          isLocked 
+                            ? "bg-slate-100 text-slate-400 cursor-not-allowed shadow-none" 
+                            : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-100 disabled:opacity-50"
+                        )}
+                      >
+                        {enrolling === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : (isLocked ? 'Prerequisites Required' : 'Enroll Now')}
+                      </button>
+                    )}
+                    <ChevronRight className={cn("w-5 h-5", isLocked ? "text-slate-200" : "text-slate-300 group-hover:text-indigo-500")} />
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
@@ -333,6 +386,23 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
                     placeholder="Describe what students will learn..."
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Prerequisites (Optional)</label>
+                  <select
+                    multiple
+                    value={newCourse.prerequisites}
+                    onChange={(e) => {
+                      const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                      setNewCourse({ ...newCourse, prerequisites: selectedOptions });
+                    }}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all min-h-[100px]"
+                  >
+                    {courses.map(c => (
+                      <option key={c.id} value={c.id}>{c.title}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">Hold Ctrl/Cmd to select multiple courses.</p>
                 </div>
                 <div className="flex gap-3 pt-4">
                   <button

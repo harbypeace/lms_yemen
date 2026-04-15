@@ -6,14 +6,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
 interface Quiz {
-  id: string;
-  title: string;
+  quiz_id: string;
+  quiz_title: string;
   description: string;
   passing_score: number;
 }
 
 interface Question {
-  id?: string;
+  question_id?: string;
   question_text: string;
   question_type: string;
   options: string[];
@@ -32,7 +32,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ targetId, targetType }
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [quizForm, setQuizForm] = useState({ title: '', description: '', passing_score: 70 });
+  const [quizForm, setQuizForm] = useState({ quiz_title: '', description: '', passing_score: 70 });
 
   useEffect(() => {
     fetchQuiz();
@@ -44,18 +44,17 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ targetId, targetType }
       const { data, error } = await supabase
         .from('quizzes')
         .select('*')
-        .eq('target_id', targetId)
-        .eq('target_type', targetType)
+        .eq('lesson_id', targetId)
         .maybeSingle();
 
       if (data) {
         setQuiz(data);
-        setQuizForm({ title: data.title, description: data.description || '', passing_score: data.passing_score });
+        setQuizForm({ quiz_title: data.quiz_title, description: data.description || '', passing_score: data.passing_score });
         
         const { data: qData } = await supabase
-          .from('questions')
+          .from('quiz_questions')
           .select('*')
-          .eq('quiz_id', data.id)
+          .eq('quiz_id', data.quiz_id)
           .order('order_index', { ascending: true });
         
         setQuestions(qData || []);
@@ -74,43 +73,42 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ targetId, targetType }
     if (!activeTenant) return;
 
     try {
-      let quizId = quiz?.id;
+      let quizId = quiz?.quiz_id;
 
       if (quizId) {
         await supabase
           .from('quizzes')
           .update(quizForm)
-          .eq('id', quizId);
+          .eq('quiz_id', quizId);
       } else {
         const { data, error } = await supabase
           .from('quizzes')
           .insert([{
             ...quizForm,
             tenant_id: activeTenant.id,
-            target_id: targetId,
-            target_type: targetType
+            lesson_id: targetId
           }])
           .select()
           .single();
         
         if (error) throw error;
-        quizId = data.id;
+        quizId = data.quiz_id;
       }
 
       // Save questions
       // Simple approach: delete all and re-insert
       if (quizId) {
-        await supabase.from('questions').delete().eq('quiz_id', quizId);
+        await supabase.from('quiz_questions').delete().eq('quiz_id', quizId);
         if (questions.length > 0) {
           const questionsToInsert = questions.map((q, idx) => {
-            const { id, ...rest } = q;
+            const { question_id, ...rest } = q;
             return {
               ...rest,
               quiz_id: quizId,
               order_index: idx
             };
           });
-          await supabase.from('questions').insert(questionsToInsert);
+          await supabase.from('quiz_questions').insert(questionsToInsert);
         }
       }
 
@@ -155,7 +153,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ targetId, targetType }
         <button
           onClick={() => {
             setEditing(true);
-            setQuizForm({ title: `Quiz for ${targetType}`, description: '', passing_score: 70 });
+            setQuizForm({ quiz_title: `Quiz for ${targetType}`, description: '', passing_score: 70 });
           }}
           className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-indigo-700 transition-all"
         >
@@ -170,7 +168,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ targetId, targetType }
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-xl font-bold text-slate-900">{quiz.title}</h3>
+            <h3 className="text-xl font-bold text-slate-900">{quiz.quiz_title}</h3>
             <p className="text-slate-500 text-sm">{questions.length} Questions • {quiz.passing_score}% Passing Score</p>
           </div>
           <button
@@ -229,8 +227,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ targetId, targetType }
             <label className="block text-sm font-bold text-slate-700 mb-1">Quiz Title</label>
             <input
               type="text"
-              value={quizForm.title}
-              onChange={(e) => setQuizForm({ ...quizForm, title: e.target.value })}
+              value={quizForm.quiz_title}
+              onChange={(e) => setQuizForm({ ...quizForm, quiz_title: e.target.value })}
               className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
             />
           </div>

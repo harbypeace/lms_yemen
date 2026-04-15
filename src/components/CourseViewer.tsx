@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Book, ChevronLeft, ChevronRight, CheckCircle, Play, FileText, HelpCircle, Loader2 } from 'lucide-react';
+import { Book, ChevronLeft, ChevronRight, CheckCircle, Play, FileText, HelpCircle, Loader2, Lock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { LessonContent } from './LessonContent';
@@ -10,8 +10,7 @@ import { QuizViewer } from './QuizViewer';
 import { QuizManager } from './QuizManager';
 import { LessonAdaptiveEditor } from './LessonAdaptiveEditor';
 import { NoteSection } from './NoteSection';
-import { useGamification } from '../hooks/useGamification';
-import { xapiLite } from '../services/xapiService';
+import { useLMSEvents } from '../hooks/useLMSEvents';
 import { adaptiveEngine } from '../services/adaptiveEngine';
 
 interface CourseViewerProps {
@@ -21,7 +20,7 @@ interface CourseViewerProps {
 
 export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) => {
   const { user, progress, setProgress, memberships, activeTenant } = useAuth();
-  const { trackEvent, checkCourseCompletion } = useGamification();
+  const { trackLessonStart, trackLessonComplete } = useLMSEvents();
   
   const myRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
   const isAdmin = ['super_admin', 'school_admin', 'teacher'].includes(myRole || '');
@@ -32,6 +31,7 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
   const [completing, setCompleting] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'content' | 'quiz' | 'notes' | 'manage'>('content');
+  const [prerequisitesMet, setPrerequisitesMet] = useState(true);
 
   useEffect(() => {
     fetchCourseData();
@@ -47,6 +47,22 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
         .eq('id', courseId)
         .single();
       setCourse(courseData);
+
+      // Check prerequisites
+      if (courseData.prerequisites && courseData.prerequisites.length > 0 && user) {
+        const { data: completed } = await supabase
+          .from('learning_events')
+          .select('course_id')
+          .eq('user_id', user.id)
+          .eq('event_type', 'course_completed')
+          .in('course_id', courseData.prerequisites);
+        
+        const completedIds = completed?.map(c => c.course_id) || [];
+        const allMet = courseData.prerequisites.every((id: string) => completedIds.includes(id));
+        setPrerequisitesMet(allMet);
+      } else {
+        setPrerequisitesMet(true);
+      }
 
       // 2. Get modules and lessons
       const { data: modulesData } = await supabase
@@ -79,12 +95,7 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
     if (selectedLessonId && course) {
       const lesson = modules.flatMap(m => m.lessons).find(l => l.id === selectedLessonId);
       if (lesson) {
-        xapiLite.start({
-          activityId: lesson.title,
-          activityType: 'lesson',
-          tenantId: course.tenant_id,
-          metadata: { lessonId: selectedLessonId, courseId: course.id }
-        });
+        trackLessonStart(selectedLessonId, course.id);
       }
     }
   }, [selectedLessonId, course]);
@@ -99,67 +110,29 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
 
     try {
       const { error } = await supabase
-        .from('progress')
+        .from('user_progress')
         .upsert({
           user_id: user.id,
           lesson_id: lessonId,
-          completed: true,
+          status: 'completed',
           score: score || null,
-          updated_at: new Date().toISOString()
+          completion_date: new Date().toISOString()
         }, {
           onConflict: 'user_id,lesson_id'
         });
 
       if (error) throw error;
 
-      // Track xAPI Lite end
+      // Track with Unified Event System (handles xAPI, Gamification, and Webhooks)
       const lesson = modules.flatMap(m => m.lessons).find(l => l.id === lessonId);
       if (lesson) {
-        xapiLite.end({
-          activityId: lesson.title,
-          activityType: 'lesson',
-          success: true,
-          completion: true,
-          tenantId: course.tenant_id,
-          isPublic: true, // Make some events public for the feed
-          metadata: { lessonId, courseId: course.id, score }
-        });
-
-        if (score) {
-          xapiLite.score({
-            activityId: lesson.title,
-            score: score,
-            activityType: 'lesson',
-            tenantId: course.tenant_id,
-            isPublic: true,
-            metadata: { lessonId, courseId: course.id }
-          });
-        }
+        await trackLessonComplete(lessonId, course.id);
       }
 
       setProgress(prev => ({
         ...prev,
         [lessonId]: true
       }));
-
-      // Track gamification event if it wasn't already completed
-      if (!isCompleted) {
-        // Find the unit ID for this lesson
-        const unitId = modules.find(m => m.lessons.some((l: any) => l.id === lessonId))?.id;
-        
-        await trackEvent({
-          eventType: 'lesson_completed',
-          entityType: 'lesson',
-          entityId: lessonId,
-          courseId: courseId,
-          unitId: unitId,
-          lessonId: lessonId,
-          metadata: { score }
-        });
-
-        // Check if course is now fully completed
-        await checkCourseCompletion(courseId);
-      }
     } catch (error) {
       console.error('Error updating progress:', error);
     } finally {
@@ -171,6 +144,24 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!prerequisitesMet && !isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto mt-12 bg-white p-12 rounded-3xl border border-slate-200 shadow-sm text-center">
+        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Lock className="w-10 h-10 text-slate-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">Course Locked</h2>
+        <p className="text-slate-500 mb-8">You must complete the prerequisite courses before accessing this content.</p>
+        <button 
+          onClick={onBack}
+          className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+        >
+          Back to Courses
+        </button>
       </div>
     );
   }

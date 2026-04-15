@@ -49,7 +49,7 @@ export const GlobalLeaderboard: React.FC = () => {
       .channel('global-leaderboard')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_gamification' },
+        { event: '*', schema: 'public', table: 'user_stats' },
         () => fetchLeaderboard()
       )
       .subscribe();

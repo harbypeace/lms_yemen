@@ -10,8 +10,8 @@ DECLARE
   v_course_title TEXT;
   v_tenant_id UUID;
 BEGIN
-  -- Only trigger if completed changed to true
-  IF NEW.completed = true AND (TG_OP = 'INSERT' OR OLD.completed = false) THEN
+  -- Only trigger if status changed to completed
+  IF NEW.status = 'completed' AND (TG_OP = 'INSERT' OR OLD.status != 'completed') THEN
     
     -- Get student name
     SELECT full_name INTO v_student_name FROM profiles WHERE id = NEW.user_id;
@@ -33,7 +33,9 @@ BEGIN
         v_parent_id,
         'Lesson Completed',
         v_student_name || ' has completed the lesson "' || v_lesson_title || '" in course "' || v_course_title || '".',
-        'success'
+        'success',
+        NULL,
+        'parent_alert'
       );
     END LOOP;
     
@@ -43,9 +45,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create trigger on progress table
-DROP TRIGGER IF EXISTS on_lesson_completion_notify_parents ON progress;
+-- Create trigger on user_progress table
+DROP TRIGGER IF EXISTS on_lesson_completion_notify_parents ON user_progress;
 CREATE TRIGGER on_lesson_completion_notify_parents
-  AFTER INSERT OR UPDATE ON progress
+  AFTER INSERT OR UPDATE ON user_progress
   FOR EACH ROW
   EXECUTE FUNCTION notify_parents_on_lesson_completion();

@@ -59,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setEnrollments(enrollMap);
 
         const progressMap: Record<string, boolean> = {};
-        data.progress.forEach((p: any) => progressMap[p.lesson_id] = p.completed);
+        data.progress.forEach((p: any) => progressMap[p.lesson_id] = p.status === 'completed');
         setProgress(progressMap);
       }
     } catch (err) {
@@ -96,7 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           {
             event: '*',
             schema: 'public',
-            table: 'progress',
+            table: 'user_progress',
             filter: `user_id=eq.${user.id}`
           },
           () => {

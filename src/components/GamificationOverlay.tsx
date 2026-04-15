@@ -22,7 +22,7 @@ export const GamificationOverlay: React.FC = () => {
         {
           event: 'UPDATE',
           schema: 'public',
-          table: 'user_gamification',
+          table: 'user_stats',
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {

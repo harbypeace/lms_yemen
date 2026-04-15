@@ -4,6 +4,8 @@ import { Play, FileText, HelpCircle, CheckCircle, ChevronRight, ChevronLeft, Loa
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
+import { useAuth } from '../context/AuthContext';
+
 interface LessonContentProps {
   lessonId: string;
   onComplete: (score?: number) => void;
@@ -11,35 +13,66 @@ interface LessonContentProps {
 }
 
 export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComplete, isCompleted }) => {
-  const [blocks, setBlocks] = useState<any[]>([]);
+  const { user } = useAuth();
+  const [activities, setActivities] = useState<any[]>([]);
+  const [activityProgress, setActivityProgress] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizScore, setQuizScore] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchBlocks();
+    fetchActivities();
   }, [lessonId]);
 
-  const fetchBlocks = async () => {
+  const fetchActivities = async () => {
     setLoading(true);
     const { data, error } = await supabase
-      .from('lesson_blocks')
+      .from('activities')
       .select('*')
       .eq('lesson_id', lessonId)
       .order('order_index', { ascending: true });
     
-    if (data) setBlocks(data);
+    if (data) setActivities(data);
+
+    if (user) {
+      const { data: progressData } = await supabase
+        .from('activity_progress')
+        .select('activity_id, status')
+        .eq('user_id', user.id)
+        .in('activity_id', data?.map(a => a.activity_id) || []);
+      
+      const progressMap: Record<string, boolean> = {};
+      progressData?.forEach(p => {
+        if (p.status === 'completed') progressMap[p.activity_id] = true;
+      });
+      setActivityProgress(progressMap);
+    }
+
     setLoading(false);
     setQuizSubmitted(false);
     setQuizScore(null);
     setQuizAnswers({});
   };
 
-  const handleQuizSubmit = (blockId: string, questions: any[]) => {
+  const markActivityComplete = async (activityId: string, score?: number) => {
+    if (!user) return;
+    
+    setActivityProgress(prev => ({ ...prev, [activityId]: true }));
+    
+    await supabase.from('activity_progress').upsert({
+      user_id: user.id,
+      activity_id: activityId,
+      status: 'completed',
+      score: score || null,
+      completed_at: new Date().toISOString()
+    }, { onConflict: 'user_id,activity_id' });
+  };
+
+  const handleQuizSubmit = async (activityId: string, questions: any[]) => {
     let correct = 0;
     questions.forEach((q, idx) => {
-      if (quizAnswers[`${blockId}_${idx}`] === q.correctAnswer) {
+      if (quizAnswers[`${activityId}_${idx}`] === q.correctAnswer) {
         correct++;
       }
     });
@@ -48,6 +81,7 @@ export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComple
     setQuizSubmitted(true);
     
     if (score >= 70) {
+      await markActivityComplete(activityId, score);
       onComplete(score);
     }
   };
@@ -62,18 +96,45 @@ export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComple
 
   return (
     <div className="space-y-12 pb-20">
-      {blocks.map((block) => (
+      {activities.map((activity, index) => (
         <motion.div
-          key={block.id}
+          key={activity.activity_id}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
         >
-          {block.type === 'video' && (
+          <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
+                {index + 1}
+              </span>
+              <span className="text-sm font-bold text-slate-700 uppercase tracking-wider">
+                {activity.activity_type}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              {activity.time_estimate_minutes && (
+                <span className="text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded-md border border-slate-200">
+                  {activity.time_estimate_minutes} min
+                </span>
+              )}
+              {activity.is_required ? (
+                <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
+                  Required
+                </span>
+              ) : (
+                <span className="text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded-md border border-slate-200">
+                  Optional
+                </span>
+              )}
+            </div>
+          </div>
+
+          {activity.activity_type === 'video' && (
             <div className="aspect-video bg-slate-900">
-              {block.content_json.video_url ? (
+              {activity.content.video_url ? (
                 <iframe
-                  src={block.content_json.video_url.replace('watch?v=', 'embed/')}
+                  src={activity.content.video_url.replace('watch?v=', 'embed/')}
                   className="w-full h-full"
                   allowFullScreen
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -87,33 +148,50 @@ export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComple
                   </div>
                   <div className="absolute bottom-6 left-6 right-6 flex items-center justify-between text-white/80 text-sm font-medium">
                     <span>Video Lesson</span>
-                    <span>12:45</span>
+                    <span>{activity.time_estimate_minutes ? `${activity.time_estimate_minutes} min` : '12:45'}</span>
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {block.type === 'text' && (
+          {(activity.activity_type === 'text' || activity.activity_type === 'html') && (
             <div className="p-8 prose prose-slate max-w-none">
-              <div dangerouslySetInnerHTML={{ __html: block.content_json.text }} />
+              <div dangerouslySetInnerHTML={{ __html: activity.content.text || activity.content.html || '' }} />
             </div>
           )}
 
-          {block.type === 'quiz' && (
+          {activity.activity_type === 'link' && (
+            <div className="p-8 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">{activity.title || 'External Resource'}</h3>
+                <p className="text-slate-500 mt-1">{activity.content.description || 'Click the link to view this resource.'}</p>
+              </div>
+              <a 
+                href={activity.content.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="px-6 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-all"
+              >
+                Open Link
+              </a>
+            </div>
+          )}
+
+          {activity.activity_type === 'quiz' && (
             <div className="p-8">
               <div className="flex items-center gap-3 mb-8">
                 <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
                   <HelpCircle className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">Knowledge Check</h3>
+                  <h3 className="text-xl font-bold text-slate-900">{activity.title || 'Knowledge Check'}</h3>
                   <p className="text-slate-500 text-sm">Test your understanding of this lesson.</p>
                 </div>
               </div>
 
               <div className="space-y-8">
-                {block.content_json.questions.map((q: any, qIdx: number) => (
+                {activity.content.questions?.map((q: any, qIdx: number) => (
                   <div key={qIdx} className="space-y-4">
                     <p className="font-bold text-slate-900 text-lg">{qIdx + 1}. {q.question}</p>
                     <div className="grid grid-cols-1 gap-3">
@@ -121,14 +199,14 @@ export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComple
                         <button
                           key={oIdx}
                           disabled={quizSubmitted}
-                          onClick={() => setQuizAnswers({ ...quizAnswers, [`${block.id}_${qIdx}`]: oIdx })}
+                          onClick={() => setQuizAnswers({ ...quizAnswers, [`${activity.activity_id}_${qIdx}`]: oIdx })}
                           className={cn(
                             "w-full p-4 rounded-xl border text-left font-medium transition-all flex items-center justify-between",
-                            quizAnswers[`${block.id}_${qIdx}`] === oIdx 
+                            quizAnswers[`${activity.activity_id}_${qIdx}`] === oIdx 
                               ? "bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm" 
                               : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100",
                             quizSubmitted && q.correctAnswer === oIdx && "bg-emerald-50 border-emerald-200 text-emerald-700",
-                            quizSubmitted && quizAnswers[`${block.id}_${qIdx}`] === oIdx && q.correctAnswer !== oIdx && "bg-red-50 border-red-200 text-red-700"
+                            quizSubmitted && quizAnswers[`${activity.activity_id}_${qIdx}`] === oIdx && q.correctAnswer !== oIdx && "bg-red-50 border-red-200 text-red-700"
                           )}
                         >
                           {option}
@@ -142,7 +220,7 @@ export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComple
 
               {!quizSubmitted ? (
                 <button
-                  onClick={() => handleQuizSubmit(block.id, block.content_json.questions)}
+                  onClick={() => handleQuizSubmit(activity.activity_id, activity.content.questions || [])}
                   className="mt-10 w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
                 >
                   Submit Quiz
@@ -181,10 +259,63 @@ export const LessonContent: React.FC<LessonContentProps> = ({ lessonId, onComple
               )}
             </div>
           )}
+          {activity.activity_type === 'flashcards' && (
+            <div className="p-8 text-center bg-indigo-50">
+              <h3 className="text-xl font-bold text-slate-900 mb-4">{activity.title || 'Flashcards'}</h3>
+              <p className="text-slate-600 mb-6">Review key concepts with interactive flashcards.</p>
+              <button className="px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all">
+                Start Flashcards
+              </button>
+            </div>
+          )}
+
+          {activity.activity_type === 'embed' && (
+            <div className="aspect-video bg-slate-100">
+              {activity.content.embed_url ? (
+                <iframe
+                  src={activity.content.embed_url}
+                  className="w-full h-full"
+                  allowFullScreen
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                  No embed URL provided
+                </div>
+              )}
+            </div>
+          )}
+
+          {activity.activity_type === 'challenge' && (
+            <div className="p-8 border-l-4 border-amber-500 bg-amber-50/50">
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Challenge: {activity.title}</h3>
+              <p className="text-slate-700 mb-6">{activity.content.description}</p>
+              <button className="px-6 py-3 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 transition-all">
+                Start Challenge
+              </button>
+            </div>
+          )}
+
+          {activity.activity_type !== 'quiz' && (
+            <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-end">
+              {activityProgress[activity.activity_id] ? (
+                <div className="flex items-center gap-2 text-emerald-600 font-bold px-4 py-2">
+                  <CheckCircle className="w-5 h-5" />
+                  Completed
+                </div>
+              ) : (
+                <button
+                  onClick={() => markActivityComplete(activity.activity_id)}
+                  className="px-6 py-2 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all text-sm"
+                >
+                  Mark as Complete
+                </button>
+              )}
+            </div>
+          )}
         </motion.div>
       ))}
 
-      {!isCompleted && blocks.every(b => b.type !== 'quiz') && (
+      {!isCompleted && activities.every(a => a.activity_type !== 'quiz') && (
         <div className="flex justify-center pt-8">
           <button
             onClick={() => onComplete()}

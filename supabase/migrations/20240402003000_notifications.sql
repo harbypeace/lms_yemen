@@ -31,10 +31,10 @@ CREATE POLICY "Admins can insert notifications"
   ON notifications FOR INSERT
   WITH CHECK (
     EXISTS (
-      SELECT 1 FROM tenant_members
-      WHERE tenant_members.tenant_id = notifications.tenant_id
-      AND tenant_members.user_id = auth.uid()
-      AND tenant_members.role IN ('super_admin', 'school_admin', 'teacher')
+      SELECT 1 FROM memberships
+      WHERE memberships.tenant_id = notifications.tenant_id
+      AND memberships.user_id = auth.uid()
+      AND memberships.role IN ('super_admin', 'school_admin', 'teacher')
     )
   );
 

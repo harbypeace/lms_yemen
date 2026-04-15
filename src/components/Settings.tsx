@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { User, Lock, MapPin, Phone, Building, Loader2, Save, Users, GraduationCap, ChevronDown, Zap, Target, CheckCircle } from 'lucide-react';
+import { User, Lock, MapPin, Phone, Building, Loader2, Save, Users, GraduationCap, ChevronDown, Zap, Target, CheckCircle, Bell } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -22,11 +22,69 @@ export const Settings: React.FC = () => {
     difficulty_level: 'intermediate'
   });
 
+  // Notification Prefs State
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    system_announcements: true,
+    course_updates: true,
+    new_badges: true,
+    parent_alerts: true
+  });
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifSuccess, setNotifSuccess] = useState<string | null>(null);
+
   useEffect(() => {
     if (user) {
       fetchLearningPrefs();
+      fetchNotificationPrefs();
     }
   }, [user]);
+
+  const fetchNotificationPrefs = async () => {
+    try {
+      const response = await fetch('/api/notification-preferences', {
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        }
+      });
+      const data = await response.json();
+      if (data && !data.error) {
+        setNotificationPrefs({
+          system_announcements: data.system_announcements,
+          course_updates: data.course_updates,
+          new_badges: data.new_badges,
+          parent_alerts: data.parent_alerts
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching notification prefs:', err);
+    }
+  };
+
+  const handleNotificationUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    setNotifLoading(true);
+    try {
+      const response = await fetch('/api/notification-preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify(notificationPrefs)
+      });
+      const data = await response.json();
+      if (data.success) {
+        setNotifSuccess('Notification preferences updated!');
+        setTimeout(() => setNotifSuccess(null), 3000);
+      }
+    } catch (err) {
+      console.error('Error updating notification prefs:', err);
+    } finally {
+      setNotifLoading(false);
+    }
+  };
 
   const fetchLearningPrefs = async () => {
     try {
@@ -477,6 +535,71 @@ export const Settings: React.FC = () => {
                   className="px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-70 shadow-lg shadow-indigo-100"
                 >
                   {prefsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Save Preferences
+                </button>
+              </div>
+            </form>
+          </motion.div>
+
+          {/* Notification Preferences */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+          >
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <Bell className="w-5 h-5 text-indigo-600" />
+                Notification Preferences
+              </h3>
+            </div>
+            
+            <form onSubmit={handleNotificationUpdate} className="p-6 space-y-6">
+              <div className="space-y-4">
+                {[
+                  { id: 'system_announcements', label: 'System Announcements', desc: 'Important updates about the platform' },
+                  { id: 'course_updates', label: 'Course Updates', desc: 'New lessons, module releases, and content changes' },
+                  { id: 'new_badges', label: 'New Badges & Achievements', desc: 'Get notified when you earn a new badge or level up' },
+                  { id: 'parent_alerts', label: 'Parent Alerts', desc: 'Updates about your students progress (Parents only)' }
+                ].map((item) => (
+                  <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-100 hover:border-slate-200 transition-all">
+                    <div>
+                      <label className="font-bold text-slate-900 block">{item.label}</label>
+                      <p className="text-xs text-slate-500">{item.desc}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setNotificationPrefs({ ...notificationPrefs, [item.id]: !notificationPrefs[item.id as keyof typeof notificationPrefs] })}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                        notificationPrefs[item.id as keyof typeof notificationPrefs] ? "bg-indigo-600" : "bg-slate-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          notificationPrefs[item.id as keyof typeof notificationPrefs] ? "translate-x-6" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {notifSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-600 text-sm rounded-lg">
+                  {notifSuccess}
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={notifLoading}
+                  className="px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-70 shadow-lg shadow-indigo-100"
+                >
+                  {notifLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   Save Preferences
                 </button>
               </div>

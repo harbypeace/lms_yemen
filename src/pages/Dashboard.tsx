@@ -94,10 +94,10 @@ export const Dashboard: React.FC = () => {
             const lessonIds = lessons?.map(l => l.id) || [];
             if (lessonIds.length > 0) {
               const { count: completedCount } = await supabase
-                .from('progress')
+                .from('user_progress')
                 .select('*', { count: 'exact', head: true })
                 .eq('user_id', profile.id)
-                .eq('completed', true)
+                .eq('status', 'completed')
                 .in('lesson_id', lessonIds);
               
               completedLessonsCount = completedCount || 0;

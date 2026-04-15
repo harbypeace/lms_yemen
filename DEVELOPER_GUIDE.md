@@ -7,7 +7,7 @@ This guide explains how to integrate your existing lesson player components and 
 This platform is built with:
 *   **Frontend**: React 19, Vite, Tailwind CSS, Framer Motion, Lucide Icons.
 *   **Backend/Database**: Supabase (PostgreSQL), Row Level Security (RLS).
-*   **Core Features**: Multi-tenant architecture (Schools), Role-based access (Super Admin, School Admin, Teacher, Parent, Student), Adaptive Slide Engine, Quizzes, Notes, and Gamification.
+*   **Core Features**: Multi-tenant architecture (Schools), Role-based access (Super Admin, School Admin, Teacher, Parent, Student), Adaptive Slide Engine, Quizzes, Notes, Activities, and Gamification.
 
 ---
 
@@ -18,41 +18,37 @@ If you want to keep the powerful backend, auth, and adaptive engine we've built 
 ### 1. Where to put your components
 Drop your custom React components into the `/src/components/` directory. If you have a complex player, you might want to create a dedicated folder like `/src/components/player/`.
 
-### 2. Replacing the Default Lesson Player
-Currently, lessons are rendered in the `CourseViewer.tsx` component. 
+### 2. Replacing the Default Lesson Content Renderer
+Currently, lesson activities are rendered in the `LessonContent.tsx` component, which is called by `CourseViewer.tsx`. 
 
 To use your custom player:
-1. Open `/src/components/CourseViewer.tsx`.
-2. Locate the `activeTab === 'content'` section (around line 300).
-3. Replace the default mapping of `lesson_blocks` with your custom component:
+1. Open `/src/components/LessonContent.tsx`.
+2. You can either add a new `activity_type` to the switch/mapping logic or replace the entire rendering loop.
 
 ```tsx
-// Example Integration in CourseViewer.tsx
+// Example Integration in LessonContent.tsx
 import { MyCustomPlayer } from './player/MyCustomPlayer';
 
-// Inside the render block:
-{activeTab === 'content' && (
-  <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-    {/* Pass the selected lesson data to your player */}
-    <MyCustomPlayer 
-      lessonId={selectedLesson.id} 
-      lessonData={selectedLesson.content_json} // Or however your data is structured
-      onComplete={() => handleLessonComplete(selectedLesson.id)}
-    />
-  </div>
+// Inside the activities.map loop:
+{activity.activity_type === 'custom_type' && (
+  <MyCustomPlayer 
+    activityId={activity.activity_id} 
+    content={activity.content} 
+    onComplete={(score) => markActivityComplete(activity.activity_id, score)}
+  />
 )}
 ```
 
 ### 3. Adapting the Database Schema
-Currently, lesson content is stored in the `lesson_blocks` table. If your custom player uses a specific JSON structure, you have two choices:
+Currently, lesson content is stored in the `activities` table. If your custom player uses a specific JSON structure, you have two choices:
 
-**Choice 1: Use the existing `content_json` column**
-You can store your entire custom JSON payload inside the `content_json` column of the `lesson_blocks` table.
+**Choice 1: Use the existing `content` column**
+You can store your entire custom JSON payload inside the `content` (JSONB) column of the `activities` table.
 
 **Choice 2: Modify the Database Schema**
 If you need a different table structure, you can create a new migration file in `/supabase/migrations/`:
-1. Create a new file, e.g., `20240402008000_custom_player_schema.sql`.
-2. Write your SQL to alter the `lessons` table or create a new `custom_lesson_data` table.
+1. Create a new file, e.g., `20240402013000_custom_player_schema.sql`.
+2. Write your SQL to alter the `activities` table or create a new `custom_activity_data` table.
 3. Run the migration using `npx tsx run_migrations.js`.
 
 ---
@@ -69,7 +65,7 @@ If you already have a large, established repository and just want to extract the
 The most valuable part of this platform is the PostgreSQL schema and RLS policies.
 1. Copy the entire `/supabase/migrations/` folder into your repository.
 2. If you use Supabase CLI, you can run `supabase db push` to apply these to your database.
-3. The schema includes tables for `tenants`, `profiles`, `courses`, `lessons`, `quizzes`, `notes`, and `adaptive_branching_rules`.
+3. The schema includes tables for `tenants`, `profiles`, `courses`, `lessons`, `activities`, `quizzes`, `notes`, and `adaptive_branching_rules`.
 
 ### 3. Copy the Core Services
 Copy the following files into your project's `src/` directory:
@@ -100,8 +96,10 @@ When mapping your data to this system, keep this hierarchy in mind:
 2.  **Course (`courses`)**: Belongs to a tenant.
 3.  **Module (`modules`)**: Belongs to a course (e.g., "Chapter 1").
 4.  **Lesson (`lessons`)**: Belongs to a module. This is where the Adaptive Engine routes users.
-5.  **Lesson Blocks (`lesson_blocks`)**: The actual content of the lesson. *This is what you will likely replace with your custom JSON data.*
-6.  **Quizzes (`quizzes`)**: Polymorphic. Can be attached to a Course, Module, or Lesson via `target_id` and `target_type`.
+5.  **Activities (`activities`)**: The actual content of the lesson. Replaces the old `lesson_blocks`. Supports multiple types (video, quiz, html, etc.) and granular tracking via `activity_progress`.
+6.  **Quizzes (`quizzes`)**: Now specifically linked to lessons via `lesson_id`. Contains `quiz_questions` and records `quiz_submissions`.
+7.  **User Progress (`user_progress`)**: Tracks lesson completion status, scores, and XP.
+8.  **User Stats (`user_stats`)**: Global gamification data (XP, Level, Streaks, Hearts, Gems).
 
 ## The Adaptive Engine API
 

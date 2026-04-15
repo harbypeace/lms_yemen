@@ -165,10 +165,10 @@ export const ParentDashboard: React.FC = () => {
               let completedLessons = 0;
               if (lessonIds.length > 0) {
                 const { count: completed, error: progressError } = await supabase
-                  .from('progress')
-                  .select('id', { count: 'exact', head: true })
+                  .from('user_progress')
+                  .select('progress_id', { count: 'exact', head: true })
                   .eq('user_id', p.id)
-                  .eq('completed', true)
+                  .eq('status', 'completed')
                   .in('lesson_id', lessonIds);
                 
                 if (progressError) throw progressError;

@@ -25,9 +25,16 @@ async function runMigrations() {
     
     // Only run the new migrations
     const filesToRun = [
+      '20240402003000_notifications.sql',
+      '20240402003001_progress_notifications.sql',
       '20240402005000_integrations_and_sync.sql',
       '20240402006000_quizzes_and_notes.sql',
-      '20240402007000_adaptive_slide_engine.sql'
+      '20240402007000_adaptive_slide_engine.sql',
+      '20240402009000_course_prerequisites.sql',
+      '20240402010000_rename_tables.sql',
+      '20240402011000_enhance_activities.sql',
+      '20240402012000_security_hardening.sql',
+      '20240402013000_notification_preferences.sql'
     ];
 
     for (const file of filesToRun) {

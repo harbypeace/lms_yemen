@@ -58,10 +58,10 @@ export const useGamification = () => {
 
       // 2. Get completed lessons for this user
       const { data: completed } = await supabase
-        .from('progress')
+        .from('user_progress')
         .select('lesson_id')
         .eq('user_id', user.id)
-        .eq('completed', true)
+        .eq('status', 'completed')
         .in('lesson_id', allLessonIds);
       
       const completedIds = completed?.map(p => p.lesson_id) || [];

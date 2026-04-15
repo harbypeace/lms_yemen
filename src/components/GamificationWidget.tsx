@@ -7,7 +7,7 @@ import { motion } from 'motion/react';
 interface UserGamification {
   total_xp: number;
   level: number;
-  streak_days: number;
+  current_streak: number;
 }
 
 interface Badge {
@@ -32,7 +32,7 @@ export const GamificationWidget: React.FC = () => {
       try {
         // Fetch Stats - Using maybeSingle instead of single to avoid 406/PGRST116 issues
         const { data: statsData, error: statsError } = await supabase
-          .from('user_gamification')
+          .from('user_stats')
           .select('*')
           .eq('user_id', user.id)
           .maybeSingle();
@@ -79,7 +79,7 @@ export const GamificationWidget: React.FC = () => {
         {
           event: '*',
           schema: 'public',
-          table: 'user_gamification',
+          table: 'user_stats',
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
@@ -124,7 +124,7 @@ export const GamificationWidget: React.FC = () => {
 
   const currentXp = stats?.total_xp || 0;
   const currentLevel = stats?.level || 1;
-  const currentStreak = stats?.streak_days || 0;
+  const currentStreak = stats?.current_streak || 0;
 
   const xpForCurrentLevel = Math.pow(currentLevel - 1, 2) * 100;
   const xpForNextLevel = Math.pow(currentLevel, 2) * 100;

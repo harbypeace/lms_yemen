@@ -26,7 +26,7 @@ export const ProgressTracker: React.FC = () => {
         .channel('progress-tracker')
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'progress', filter: `user_id=eq.${user.id}` },
+          { event: '*', schema: 'public', table: 'user_progress', filter: `user_id=eq.${user.id}` },
           () => fetchProgress()
         )
         .subscribe();
@@ -72,11 +72,11 @@ export const ProgressTracker: React.FC = () => {
         const lessonIds = lessons?.map(l => l.id) || [];
         if (lessonIds.length > 0) {
           const { data: progress, error: progressError } = await supabase
-            .from('progress')
-            .select('completed, score')
+            .from('user_progress')
+            .select('status, score')
             .eq('user_id', user?.id)
             .in('lesson_id', lessonIds)
-            .eq('completed', true);
+            .eq('status', 'completed');
 
           if (progressError) throw progressError;
 

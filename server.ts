@@ -289,6 +289,29 @@ async function startServer() {
         return res.status(400).json({ error: 'You are already enrolled in this course' });
       }
 
+      // 2.5 Check prerequisites
+      const { data: courseData } = await supabaseAdmin
+        .from('courses')
+        .select('prerequisites')
+        .eq('id', courseId)
+        .single();
+      
+      if (courseData && courseData.prerequisites && courseData.prerequisites.length > 0) {
+        const { data: completed } = await supabaseAdmin
+          .from('learning_events')
+          .select('course_id')
+          .eq('user_id', userId)
+          .eq('event_type', 'course_completed')
+          .in('course_id', courseData.prerequisites);
+        
+        const completedIds = completed?.map(c => c.course_id) || [];
+        const allMet = courseData.prerequisites.every((id: string) => completedIds.includes(id));
+        
+        if (!allMet && !['super_admin', 'school_admin', 'teacher'].includes(membership.role)) {
+          return res.status(403).json({ error: 'Prerequisites not met for this course' });
+        }
+      }
+
       // 3. Insert enrollment using admin client (bypasses RLS)
       const { data: enrollment, error: enrollError } = await supabaseAdmin
         .from('enrollments')
@@ -316,7 +339,8 @@ async function startServer() {
           p_user_id: userId,
           p_title: 'Course Enrollment',
           p_message: `You have successfully enrolled in ${course.title}.`,
-          p_type: 'success'
+          p_type: 'success',
+          p_category: 'course_update'
         });
       }
 
@@ -548,7 +572,7 @@ async function startServer() {
   app.get('/api/leaderboard', authenticateUser, async (req: any, res: any) => {
     try {
       const { data, error } = await supabaseAdmin
-        .from('user_gamification')
+        .from('user_stats')
         .select(`
           user_id,
           total_xp,
@@ -583,8 +607,8 @@ async function startServer() {
           .eq('user_id', userId)
           .eq('tenant_id', tenantId),
         supabaseAdmin
-          .from('progress')
-          .select('lesson_id, completed')
+          .from('user_progress')
+          .select('lesson_id, status')
           .eq('user_id', userId)
       ]);
       
@@ -635,10 +659,10 @@ async function startServer() {
         let completedLessons = 0;
         if (totalLessons > 0) {
           const { count } = await supabaseAdmin
-            .from('progress')
+            .from('user_progress')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', userId)
-            .eq('completed', true)
+            .eq('status', 'completed')
             .in('lesson_id', allLessonIds);
           
           completedLessons = count || 0;
@@ -661,7 +685,7 @@ async function startServer() {
 
   // Create Course Action
   app.post('/api/courses', authenticateUser, async (req: any, res: any) => {
-    const { title, description, tenantId } = req.body;
+    const { title, description, tenantId, prerequisites = [] } = req.body;
     const userId = req.user.id;
 
     try {
@@ -683,7 +707,8 @@ async function startServer() {
         .insert({
           title,
           description,
-          tenant_id: tenantId
+          tenant_id: tenantId,
+          prerequisites
         })
         .select()
         .single();
@@ -775,10 +800,10 @@ async function startServer() {
 
       if (welcomeError) throw welcomeError;
 
-      await supabaseAdmin.from('lesson_blocks').insert({
+      await supabaseAdmin.from('activities').insert({
         lesson_id: welcomeLesson.id,
-        type: 'text',
-        content_json: { text: '<h1>Welcome!</h1><p>We are excited to have you here. This course will teach you how to use our gamification features.</p>' },
+        activity_type: 'text',
+        content: { text: '<h1>Welcome!</h1><p>We are excited to have you here. This course will teach you how to use our gamification features.</p>' },
         order_index: 0
       });
 
@@ -796,23 +821,23 @@ async function startServer() {
       if (lesson1Error) throw lesson1Error;
 
       // 5. Create Blocks for Lesson 1.1
-      await supabaseAdmin.from('lesson_blocks').insert([
+      await supabaseAdmin.from('activities').insert([
         {
           lesson_id: lesson1.id,
-          type: 'video',
-          content_json: { video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+          activity_type: 'video',
+          content: { video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
           order_index: 0
         },
         {
           lesson_id: lesson1.id,
-          type: 'text',
-          content_json: { text: 'XP (Experience Points) are the backbone of any gamified system. They provide immediate feedback for effort.' },
+          activity_type: 'text',
+          content: { text: 'XP (Experience Points) are the backbone of any gamified system. They provide immediate feedback for effort.' },
           order_index: 1
         },
         {
           lesson_id: lesson1.id,
-          type: 'quiz',
-          content_json: {
+          activity_type: 'quiz',
+          content: {
             questions: [
               {
                 question: 'What does XP stand for?',
@@ -852,17 +877,17 @@ async function startServer() {
       if (lesson2Error) throw lesson2Error;
 
       // 8. Create Blocks for Lesson 2.1
-      await supabaseAdmin.from('lesson_blocks').insert([
+      await supabaseAdmin.from('activities').insert([
         {
           lesson_id: lesson2.id,
-          type: 'text',
-          content_json: { text: 'Badges are visual representations of achievements. They can be used to signal mastery or participation.' },
+          activity_type: 'text',
+          content: { text: 'Badges are visual representations of achievements. They can be used to signal mastery or participation.' },
           order_index: 0
         },
         {
           lesson_id: lesson2.id,
-          type: 'quiz',
-          content_json: {
+          activity_type: 'quiz',
+          content: {
             questions: [
               {
                 question: 'Which of these is a common gamification element?',
@@ -901,17 +926,17 @@ async function startServer() {
 
       if (lesson3Error) throw lesson3Error;
 
-      await supabaseAdmin.from('lesson_blocks').insert([
+      await supabaseAdmin.from('activities').insert([
         {
           lesson_id: lesson3.id,
-          type: 'text',
-          content_json: { text: '<h1>Final Quiz</h1><p>Prove your mastery of gamification concepts.</p>' },
+          activity_type: 'text',
+          content: { text: '<h1>Final Quiz</h1><p>Prove your mastery of gamification concepts.</p>' },
           order_index: 0
         },
         {
           lesson_id: lesson3.id,
-          type: 'quiz',
-          content_json: {
+          activity_type: 'quiz',
+          content: {
             questions: [
               {
                 question: 'What is the primary goal of gamification?',
@@ -953,6 +978,133 @@ async function startServer() {
       res.status(201).json({ success: true, course: courseData });
     } catch (err: any) {
       console.error('Error generating demo:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Unified LMS Event Endpoint
+  app.post('/api/events', authenticateUser, async (req: any, res: any) => {
+    const { 
+      eventType, // 'lesson_completed', 'quiz_passed', etc.
+      entityType, // 'lesson', 'quiz', 'course'
+      entityId,
+      courseId,
+      metadata = {},
+      tenantId,
+      isPublic = false,
+      score,
+      maxScore,
+      duration
+    } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const results: any = {
+        xapi: null,
+        gamification: null,
+        webhooks: []
+      };
+
+      // 1. Track xAPI Statement
+      let verb: 'start' | 'end' | 'score' | 'store' = 'store';
+      if (eventType.includes('start')) verb = 'start';
+      else if (eventType.includes('completed') || eventType.includes('passed')) verb = 'end';
+      else if (score !== undefined) verb = 'score';
+
+      const xapiParams: any = {
+        p_activity_id: entityId || courseId || 'system',
+        p_activity_type: entityType,
+        p_tenant_id: tenantId,
+        p_metadata: metadata,
+        p_is_public: isPublic
+      };
+
+      if (verb === 'score') {
+        xapiParams.p_score = score;
+        xapiParams.p_max_score = maxScore || 100;
+        const { data: xid } = await supabaseAdmin.rpc('xapi_score', xapiParams);
+        results.xapi = xid;
+      } else if (verb === 'end') {
+        xapiParams.p_success = eventType.includes('passed') || metadata.passed;
+        xapiParams.p_completion = true;
+        xapiParams.p_duration = duration;
+        const { data: xid } = await supabaseAdmin.rpc('xapi_end', xapiParams);
+        results.xapi = xid;
+      } else {
+        xapiParams.p_verb = verb;
+        const { data: xid } = await supabaseAdmin.rpc('xapi_store', xapiParams);
+        results.xapi = xid;
+      }
+
+      // 2. Track Gamification
+      const { data: gSuccess, error: gError } = await supabaseAdmin.rpc('track_learning_event', {
+        p_user_id: userId,
+        p_event_type: eventType,
+        p_entity_type: entityType,
+        p_entity_id: entityId,
+        p_course_id: courseId,
+        p_metadata: metadata,
+        p_org_id: tenantId || userId
+      });
+      results.gamification = gSuccess;
+
+      // 3. Trigger Webhooks/Integrations
+      if (tenantId) {
+        const { data: integrations } = await supabaseAdmin
+          .from('integrations')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .eq('is_active', true);
+
+        if (integrations && integrations.length > 0) {
+          for (const integration of integrations) {
+            // Check if this integration listens to this event type
+            const events = integration.events || [];
+            if (events.includes(eventType) || events.includes('*')) {
+              try {
+                const response = await fetch(integration.endpoint_url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(integration.api_key ? { 'Authorization': `Bearer ${integration.api_key}` } : {})
+                  },
+                  body: JSON.stringify({
+                    event: eventType,
+                    user_id: userId,
+                    entity_type: entityType,
+                    entity_id: entityId,
+                    course_id: courseId,
+                    score,
+                    metadata,
+                    timestamp: new Date().toISOString()
+                  })
+                });
+
+                const syncStatus = response.ok ? 'success' : 'failed';
+                const responseText = await response.text();
+                
+                await supabaseAdmin.from('sync_logs').insert([{
+                  integration_id: integration.id,
+                  event_type: eventType,
+                  status: syncStatus,
+                  request_payload: req.body,
+                  response_payload: { status: response.status, body: responseText },
+                  error_message: response.ok ? null : `HTTP Error ${response.status}`
+                }]);
+
+                results.webhooks.push({ id: integration.id, status: syncStatus });
+              } catch (webhookErr: any) {
+                console.error(`Webhook failed for ${integration.name}:`, webhookErr);
+                results.webhooks.push({ id: integration.id, status: 'error', error: webhookErr.message });
+              }
+            }
+          }
+        }
+      }
+
+      res.json({ success: true, results });
+    } catch (err: any) {
+      console.error('Unified Event Error:', err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -1209,6 +1361,59 @@ async function startServer() {
 
       if (error) throw error;
       res.json({ success: true, users: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  
+  // Notification Preferences Endpoints
+  app.get('/api/notification-preferences', authenticateUser, async (req: any, res: any) => {
+    const userId = req.user.id;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('notification_preferences')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      
+      // If no preferences found, return defaults
+      if (!data) {
+        return res.json({
+          system_announcements: true,
+          course_updates: true,
+          new_badges: true,
+          parent_alerts: true
+        });
+      }
+
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/notification-preferences', authenticateUser, async (req: any, res: any) => {
+    const userId = req.user.id;
+    const { system_announcements, course_updates, new_badges, parent_alerts } = req.body;
+
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('notification_preferences')
+        .upsert({
+          user_id: userId,
+          system_announcements,
+          course_updates,
+          new_badges,
+          parent_alerts,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, preferences: data });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

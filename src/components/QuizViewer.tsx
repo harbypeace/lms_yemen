@@ -4,10 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { CheckCircle, XCircle, ChevronRight, RefreshCw, Trophy, AlertCircle, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { xapiLite } from '../services/xapiService';
+import { useLMSEvents } from '../hooks/useLMSEvents';
 
 interface Question {
-  id: string;
+  question_id: string;
   question_text: string;
   question_type: string;
   options: string[];
@@ -16,8 +16,8 @@ interface Question {
 }
 
 interface Quiz {
-  id: string;
-  title: string;
+  quiz_id: string;
+  quiz_title: string;
   description: string;
   passing_score: number;
   tenant_id: string;
@@ -31,6 +31,7 @@ interface QuizViewerProps {
 
 export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, onComplete }) => {
   const { user } = useAuth();
+  const { trackQuizResult } = useLMSEvents();
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,17 +51,16 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
       const { data: quizData, error: quizError } = await supabase
         .from('quizzes')
         .select('*')
-        .eq('target_id', targetId)
-        .eq('target_type', targetType)
+        .eq('lesson_id', targetId)
         .single();
 
       if (quizError) throw quizError;
       setQuiz(quizData);
 
       const { data: questionsData, error: qError } = await supabase
-        .from('questions')
+        .from('quiz_questions')
         .select('*')
-        .eq('quiz_id', quizData.id)
+        .eq('quiz_id', quizData.quiz_id)
         .order('order_index', { ascending: true });
 
       if (qError) throw qError;
@@ -82,7 +82,7 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
 
     let correctCount = 0;
     questions.forEach(q => {
-      if (answers[q.id] === q.correct_answer) {
+      if (answers[q.question_id] === q.correct_answer) {
         correctCount++;
       }
     });
@@ -92,10 +92,10 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
 
     try {
       const { error } = await supabase
-        .from('quiz_attempts')
+        .from('quiz_submissions')
         .insert([{
           user_id: user.id,
-          quiz_id: quiz.id,
+          quiz_id: quiz.quiz_id,
           score: finalScore,
           total_questions: questions.length,
           passed,
@@ -104,15 +104,8 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
 
       if (error) throw error;
 
-      // Track with xAPI Lite
-      await xapiLite.score({
-        activityId: quiz.title,
-        score: finalScore,
-        activityType: 'quiz',
-        tenantId: quiz.tenant_id,
-        isPublic: passed,
-        metadata: { quizId: quiz.id, targetId, targetType, passed }
-      });
+      // Track with Unified Event System (handles xAPI, Gamification, and Webhooks)
+      await trackQuizResult(quiz.quiz_id, finalScore, passed, targetId);
 
       setScore(finalScore);
       setShowResults(true);
@@ -154,7 +147,7 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
           {passed ? 'Congratulations!' : 'Keep Practicing!'}
         </h3>
         <p className="text-slate-500 font-medium mb-8">
-          You scored <span className="text-indigo-600 font-bold">{score}%</span> on the {quiz.title}.
+          You scored <span className="text-indigo-600 font-bold">{score}%</span> on the {quiz.quiz_title}.
           {passed ? ' You have passed this assessment.' : ` You need ${quiz.passing_score}% to pass.`}
         </p>
         <button
@@ -187,7 +180,7 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
         <div>
-          <h3 className="font-bold text-slate-900">{quiz.title}</h3>
+          <h3 className="font-bold text-slate-900">{quiz.quiz_title}</h3>
           <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">
             Question {currentQuestionIndex + 1} of {questions.length}
           </p>
@@ -203,7 +196,7 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
       <div className="p-8">
         <AnimatePresence mode="wait">
           <motion.div
-            key={currentQuestion.id}
+            key={currentQuestion.question_id}
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
@@ -215,10 +208,10 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
               {currentQuestion.options.map((option, idx) => (
                 <button
                   key={idx}
-                  onClick={() => handleAnswer(currentQuestion.id, option)}
+                  onClick={() => handleAnswer(currentQuestion.question_id, option)}
                   className={cn(
                     "w-full p-4 rounded-2xl border-2 text-left transition-all font-medium flex items-center justify-between group",
-                    answers[currentQuestion.id] === option
+                    answers[currentQuestion.question_id] === option
                       ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                       : "border-slate-100 hover:border-slate-200 text-slate-600 hover:bg-slate-50"
                   )}
@@ -226,11 +219,11 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
                   <span>{option}</span>
                   <div className={cn(
                     "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
-                    answers[currentQuestion.id] === option
+                    answers[currentQuestion.question_id] === option
                       ? "border-indigo-600 bg-indigo-600 text-white"
                       : "border-slate-200 group-hover:border-slate-300"
                   )}>
-                    {answers[currentQuestion.id] === option && <CheckCircle className="w-4 h-4" />}
+                    {answers[currentQuestion.question_id] === option && <CheckCircle className="w-4 h-4" />}
                   </div>
                 </button>
               ))}
@@ -250,7 +243,7 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
         
         {currentQuestionIndex === questions.length - 1 ? (
           <button
-            disabled={!answers[currentQuestion.id] || submitting}
+            disabled={!answers[currentQuestion.question_id] || submitting}
             onClick={handleSubmit}
             className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 flex items-center gap-2"
           >
@@ -258,7 +251,7 @@ export const QuizViewer: React.FC<QuizViewerProps> = ({ targetId, targetType, on
           </button>
         ) : (
           <button
-            disabled={!answers[currentQuestion.id]}
+            disabled={!answers[currentQuestion.question_id]}
             onClick={() => setCurrentQuestionIndex(prev => prev + 1)}
             className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center gap-2 disabled:opacity-50"
           >
