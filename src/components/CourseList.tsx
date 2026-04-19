@@ -17,6 +17,7 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
   const [enrolling, setEnrolling] = useState<string | null>(null);
   const [generatingDemo, setGeneratingDemo] = useState(false);
   const [completedCourses, setCompletedCourses] = useState<string[]>([]);
+  const [courseTitles, setCourseTitles] = useState<Record<string, string>>({});
 
   const myRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
   const isAdminOrTeacher = ['super_admin', 'school_admin', 'teacher'].includes(myRole || '');
@@ -25,8 +26,29 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
     if (activeTenant) {
       fetchCourses();
       fetchCompletedCourses();
+      fetchCourseTitles();
     }
   }, [activeTenant, user, onlyEnrolled, enrollments]);
+
+  const fetchCourseTitles = async () => {
+    if (!activeTenant) return;
+    try {
+      const { data } = await supabase
+        .from('courses')
+        .select('id, title')
+        .eq('tenant_id', activeTenant.id);
+      
+      if (data) {
+        const titleMap = data.reduce((acc: any, c: any) => {
+          acc[c.id] = c.title;
+          return acc;
+        }, {});
+        setCourseTitles(titleMap);
+      }
+    } catch (err) {
+      console.error('Error fetching course titles:', err);
+    }
+  };
 
   const fetchCompletedCourses = async () => {
     if (!user) return;
@@ -194,12 +216,27 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
   };
 
   const arePrerequisitesMet = (course: any) => {
+    if (isAdminOrTeacher) return true;
     if (!course.prerequisites || course.prerequisites.length === 0) return true;
     return course.prerequisites.every((prereqId: string) => completedCourses.includes(prereqId));
   };
 
+  const getMissingPrerequisites = (course: any) => {
+    if (!course.prerequisites) return [];
+    return course.prerequisites.filter((id: string) => !completedCourses.includes(id));
+  };
+
   if (selectedCourseId) {
-    return <CourseViewer courseId={selectedCourseId} onBack={() => setSelectedCourseId(null)} />;
+    return (
+      <CourseViewer 
+        courseId={selectedCourseId} 
+        onBack={() => {
+          setSelectedCourseId(null);
+          fetchCompletedCourses();
+          fetchCourses();
+        }} 
+      />
+    );
   }
 
   return (
@@ -248,58 +285,80 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {courses.map((course) => {
             const isLocked = !arePrerequisitesMet(course);
+            const missingPrereqs = getMissingPrerequisites(course);
             
             return (
               <motion.div
                 key={course.id}
                 whileHover={!isLocked ? { y: -4 } : {}}
                 className={cn(
-                  "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all",
-                  isLocked ? "opacity-75" : "group"
+                  "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all flex flex-col h-full",
+                  isLocked ? "opacity-90" : "group"
                 )}
               >
-                <div className="h-32 bg-slate-100 flex items-center justify-center group-hover:bg-indigo-50 transition-all relative">
+                <div className="h-32 bg-slate-100 flex items-center justify-center group-hover:bg-indigo-50 transition-all relative shrink-0">
                   {isLocked ? (
-                    <Lock className="w-12 h-12 text-slate-300" />
+                    <div className="flex flex-col items-center gap-2">
+                      <Lock className="w-10 h-10 text-slate-300" />
+                    </div>
                   ) : (
                     <Book className="w-12 h-12 text-slate-300 group-hover:text-indigo-400" />
                   )}
                   {isLocked && (
                     <div className="absolute inset-0 bg-slate-900/5 flex items-center justify-center backdrop-blur-[1px]">
-                      <span className="bg-white/90 px-3 py-1 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-1">
+                      <span className="bg-white/90 px-3 py-1 rounded-full text-[10px] font-bold text-slate-600 shadow-sm flex items-center gap-1 uppercase tracking-wider">
                         <Lock className="w-3 h-3" /> Locked
                       </span>
                     </div>
                   )}
                 </div>
-                <div className="p-6">
-                  <h3 className="font-bold text-slate-900 text-lg mb-2">{course.title}</h3>
-                  <p className="text-slate-500 text-sm line-clamp-2 mb-4">{course.description}</p>
-                  
-                  {onlyEnrolled && (
-                    <div className="mb-4 space-y-1.5">
-                      <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        <span>Progress</span>
-                        <span>{(course.completed_lessons || 0)} / {(course.total_lessons || 0)} Lessons</span>
+                <div className="p-6 flex flex-col flex-grow">
+                  <div className="flex-grow">
+                    <h3 className="font-bold text-slate-900 text-lg mb-2">{course.title}</h3>
+                    <p className="text-slate-500 text-sm line-clamp-2 mb-4">{course.description}</p>
+                    
+                    {isLocked && missingPrereqs.length > 0 && (
+                      <div className="mb-4 p-3 bg-amber-50 rounded-xl border border-amber-100/50">
+                        <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-1">Prerequisites Required:</p>
+                        <div className="space-y-1">
+                          {missingPrereqs.map((id: string) => {
+                            const title = courseTitles[id] || 'Required Course';
+                            return (
+                              <div key={id} className="flex items-center gap-1.5 text-amber-700/80 text-xs text-left">
+                                <Lock className="w-3 h-3 opacity-30" />
+                                <span className="truncate">{title}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${course.progress_percent}%` }}
-                          className="h-full bg-indigo-600 rounded-full"
-                        />
+                    )}
+                    
+                    {onlyEnrolled && (
+                      <div className="mb-4 space-y-1.5">
+                        <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          <span>Progress</span>
+                          <span>{(course.completed_lessons || 0)} / {(course.total_lessons || 0)} Lessons</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${course.progress_percent || 0}%` }}
+                            className="h-full bg-indigo-600 rounded-full"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-50">
                     {enrollments[course.id] ? (
                       <button 
                         onClick={() => !isLocked && setSelectedCourseId(course.id)}
                         disabled={isLocked}
                         className={cn(
-                          "flex items-center gap-2 font-bold text-sm",
-                          isLocked ? "text-slate-400 cursor-not-allowed" : "text-indigo-600 hover:underline"
+                          "flex items-center gap-2 font-bold text-sm transition-all",
+                          isLocked ? "text-slate-400 cursor-not-allowed" : "text-indigo-600 hover:text-indigo-700"
                         )}
                       >
                         <GraduationCap className="w-4 h-4" />
@@ -310,16 +369,20 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
                         onClick={() => !isLocked && handleEnroll(course.id)}
                         disabled={enrolling === course.id || isLocked}
                         className={cn(
-                          "px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg",
+                          "px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg active:scale-95",
                           isLocked 
                             ? "bg-slate-100 text-slate-400 cursor-not-allowed shadow-none" 
                             : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-100 disabled:opacity-50"
                         )}
                       >
-                        {enrolling === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : (isLocked ? 'Prerequisites Required' : 'Enroll Now')}
+                        {enrolling === course.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin mx-4" />
+                        ) : (
+                          isLocked ? 'Prerequisites Required' : 'Enroll Now'
+                        )}
                       </button>
                     )}
-                    <ChevronRight className={cn("w-5 h-5", isLocked ? "text-slate-200" : "text-slate-300 group-hover:text-indigo-500")} />
+                    <ChevronRight className={cn("w-5 h-5 transition-all", isLocked ? "text-slate-200" : "text-slate-300 group-hover:text-indigo-500")} />
                   </div>
                 </div>
               </motion.div>

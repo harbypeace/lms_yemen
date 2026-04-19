@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Users, User, ChevronRight, Mail, Phone, Calendar, Shield } from 'lucide-react';
+import { Users, User, ChevronRight, Mail, Phone, Calendar, Shield, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface ManagedUser {
@@ -17,6 +17,7 @@ export const ManagedUsers: React.FC = () => {
   const { user } = useAuth();
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -43,6 +44,11 @@ export const ManagedUsers: React.FC = () => {
     }
   };
 
+  const filteredUsers = managedUsers.filter(u => 
+    u.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.role?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -53,10 +59,20 @@ export const ManagedUsers: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-slate-900">Managed Accounts</h2>
           <p className="text-slate-500 font-medium">Users under your management or supervision.</p>
+        </div>
+        <div className="relative group min-w-[300px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+          <input
+            type="text"
+            placeholder="Search managed accounts..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all shadow-sm"
+          />
         </div>
       </div>
 
@@ -68,9 +84,23 @@ export const ManagedUsers: React.FC = () => {
           <h3 className="text-xl font-bold text-slate-900">No Managed Users</h3>
           <p className="text-slate-500 mt-2">You don't have any users linked to your account yet.</p>
         </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center">
+          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Search className="w-8 h-8 text-slate-400" />
+          </div>
+          <h3 className="text-xl font-bold text-slate-900">No results found</h3>
+          <p className="text-slate-500 mt-2">Try adjusting your search query.</p>
+          <button 
+            onClick={() => setSearchQuery('')}
+            className="text-indigo-600 font-bold mt-4 hover:underline"
+          >
+            Clear Search
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {managedUsers.map((u) => (
+          {filteredUsers.map((u) => (
             <motion.div
               key={u.id}
               initial={{ opacity: 0, y: 20 }}

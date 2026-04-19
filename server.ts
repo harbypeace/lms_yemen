@@ -16,6 +16,12 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Startup verification
+  console.log('Environment Verification:');
+  console.log('- Supabase URL:', process.env.VITE_SUPABASE_URL ? 'Loaded' : 'Missing');
+  console.log('- Resend API Key:', process.env.RESEND_API_KEY ? `Loaded (ends with ...${process.env.RESEND_API_KEY.slice(-4)})` : 'Missing');
+  console.log('- App URL:', process.env.APP_URL || 'Not set (will use localhost:3000 callback)');
+
   // Supabase Admin Client (using Service Role Key if available, otherwise Anon)
   let supabaseUrl = process.env.VITE_SUPABASE_URL;
   if (!supabaseUrl || !supabaseUrl.startsWith('http')) {
@@ -28,6 +34,49 @@ async function startServer() {
   }
   
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+  // Email helper (Resend)
+  const sendEmail = async ({ to, subject, html }: { to: string, subject: string, html: string }) => {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      console.log('RESEND_API_KEY not found. Simulating email send...');
+      console.log('To:', to);
+      console.log('Subject:', subject);
+      return { success: true, simulated: true };
+    }
+
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          from: 'Nexus LMS <onboarding@resend.dev>',
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+      
+      const data = await res.json();
+      console.log('Resend API Response:', JSON.stringify(data, null, 2));
+      
+      // Check if Resend returned an error
+      if (data.statusCode && data.statusCode >= 400) {
+        console.warn(`Resend Error (${data.statusCode}): ${data.message}`);
+        if (data.message?.includes('onboarding@resend.dev')) {
+          console.warn('TIP: To send to others, you must verify a domain in Resend. onboarding@resend.dev only allows sending to your own account email.');
+        }
+      }
+      
+      return data;
+    } catch (err) {
+      console.error('Fetch error during email send:', err);
+      return { success: false, error: err };
+    }
+  };
 
   // Middleware to verify Supabase User
   const authenticateUser = async (req: any, res: any, next: any) => {
@@ -48,10 +97,65 @@ async function startServer() {
     res.json({ status: 'ok' });
   });
 
+  app.get('/api/admin/system/users', authenticateUser, async (req: any, res: any) => {
+    const userId = req.user.id;
+
+    try {
+      // Verify super_admin role in ANY tenant
+      const { data: superAdminMembership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('role', 'super_admin');
+
+      if (!superAdminMembership || superAdminMembership.length === 0) {
+        return res.status(403).json({ error: 'Unauthorized: Super Admin access required' });
+      }
+
+      const { data: users, error } = await supabaseAdmin
+        .from('profiles')
+        .select(`
+          id,
+          full_name,
+          email,
+          avatar_url,
+          memberships (
+            role,
+            tenant_id,
+            tenants (
+              name
+            )
+          )
+        `);
+
+      if (error) throw error;
+      res.json({ success: true, users });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Create School Action
   app.post('/api/schools', authenticateUser, async (req: any, res: any) => {
     const { name, slug, managerEmail, managerRole } = req.body;
     const userId = req.user.id;
+
+    // Validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (managerEmail && !emailRegex.test(managerEmail) ) {
+      return res.status(400).json({ error: 'A valid email address is required for the manager.' });
+    }
+
+    if (!name || !slug) {
+      return res.status(400).json({ error: 'School name and slug are required.' });
+    }
+
+    // Slug format validation: lowercase letters, numbers, and hyphens
+    const slugRegex = /^[a-z0-9-]+$/;
+    const cleanSlug = slug.toLowerCase().trim().replace(/\s+/g, '-');
+    if (!slugRegex.test(cleanSlug)) {
+      return res.status(400).json({ error: 'Slug can only contain lowercase letters, numbers, and hyphens.' });
+    }
 
     try {
       // 1. Check if user is General Admin
@@ -66,10 +170,25 @@ async function startServer() {
         return res.status(403).json({ error: 'Unauthorized: Only General Super Admins can create schools' });
       }
 
-      // 2. Create the school (tenant)
+      // Check if slug is already taken
+      const { data: existingTenant } = await supabaseAdmin
+        .from('tenants')
+        .select('id')
+        .eq('slug', cleanSlug)
+        .single();
+      
+      if (existingTenant) {
+        return res.status(400).json({ error: 'This school slug is already taken. Please choose another.' });
+      }
+
+      // 2. Create the school (tenant) - set as pending
       const { data: newTenant, error: createError } = await supabaseAdmin
         .from('tenants')
-        .insert([{ name, slug: slug.toLowerCase().replace(/\s+/g, '-') }])
+        .insert([{ 
+          name, 
+          slug: cleanSlug,
+          status: 'pending'
+        }])
         .select()
         .single();
 
@@ -83,20 +202,182 @@ async function startServer() {
       }]);
 
       // 4. Invite manager if provided
+      let invitation = null;
+      let temporaryPassword = null;
+      let accountCreated = false;
+
       if (managerEmail) {
-        await supabaseAdmin
+        const normalizedEmail = managerEmail.toLowerCase().trim();
+
+        // Check if user already exists in Supabase Auth
+        const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+        const users = listData?.users || [];
+        const existingAuthUser = users.find((u: any) => u.email === normalizedEmail);
+
+        if (!existingAuthUser && !listError) {
+          // Create user with temporary password
+          temporaryPassword = Math.random().toString(36).slice(-8) + '!' + Math.floor(Math.random() * 100);
+          const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email: normalizedEmail,
+            password: temporaryPassword,
+            email_confirm: true,
+            user_metadata: { 
+              role: managerRole || 'school_admin',
+              full_name: 'School Manager'
+            }
+          });
+
+          if (!authError && newUser.user) {
+            accountCreated = true;
+            // Profiles are usually synced via DB triggers, so we wait for a moment or just proceed
+          } else if (authError) {
+            console.error('Auth Provisioning Error:', authError);
+          }
+        }
+
+        const { data: inviteData, error: inviteError } = await supabaseAdmin
           .from('invitations')
           .insert([{
-            email: managerEmail.toLowerCase(),
+            email: normalizedEmail,
             role: managerRole || 'school_admin',
             tenant_id: newTenant.id,
             invited_by: userId
-          }]);
+          }])
+          .select()
+          .single();
+        
+        if (!inviteError) {
+          invitation = inviteData;
+          
+          // Send invitation email
+          const appUrl = process.env.APP_URL || 'http://localhost:3000';
+          const inviteLink = `${appUrl}/accept-invite?id=${invitation.id}`;
+          
+          let loginInstructions = `
+            <p style="color: #64748b; font-size: 14px;">If you don't have an account, you'll be asked to create one first.</p>
+          `;
+
+          if (accountCreated && temporaryPassword) {
+            loginInstructions = `
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px; margin: 24px 0;">
+                <h3 style="margin-top: 0; color: #1e293b;">Your Account is Ready!</h3>
+                <p style="font-size: 14px; margin-bottom: 8px;">We've created a temporary account for you. Log in with these credentials after clicking the button above:</p>
+                <div style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-family: monospace;">
+                  <strong>Email:</strong> ${normalizedEmail}<br />
+                  <strong>Temp Password:</strong> ${temporaryPassword}
+                </div>
+                <p style="font-size: 12px; color: #ef4444; margin-top: 12px;"><strong>Important:</strong> You should change your password immediately after logging in.</p>
+              </div>
+            `;
+          }
+
+          await sendEmail({
+            to: normalizedEmail,
+            subject: `Invitation to manage ${name}`,
+            html: `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+                <h1 style="color: #4f46e5;">Welcome to ${name}!</h1>
+                <p>You have been invited to join <strong>${name}</strong> as a <strong>${managerRole || 'school_admin'}</strong> on Nexus LMS.</p>
+                
+                <div style="margin: 32px 0; text-align: center;">
+                  <a href="${inviteLink}" style="background-color: #4f46e5; color: white; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-weight: bold; display: inline-block;">Accept Invitation</a>
+                </div>
+
+                ${loginInstructions}
+
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 32px 0;" />
+                <p style="color: #94a3b8; font-size: 12px;">This is an automated message from Nexus LMS. Please do not reply.</p>
+              </div>
+            `
+          });
+        }
       }
 
-      res.status(201).json({ success: true, school: newTenant });
+      res.status(201).json({ 
+        success: true, 
+        school: newTenant,
+        invitation,
+        temporaryPassword // Sent back to the super_admin so they can share it manually if needed
+      });
     } catch (err: any) {
       console.error('Error creating school:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Update School Action
+  app.put('/api/schools/:id', authenticateUser, async (req: any, res: any) => {
+    const { name, slug } = req.body;
+    const { id: schoolId } = req.params;
+    const userId = req.user.id;
+
+    try {
+      // Verify Super Admin status in General tenant
+      const { data: memberships } = await supabaseAdmin
+        .from('memberships')
+        .select('*, tenants!inner(*)')
+        .eq('user_id', userId)
+        .eq('tenants.slug', 'general')
+        .eq('role', 'super_admin');
+
+      if (!memberships || memberships.length === 0) {
+        return res.status(403).json({ error: 'Unauthorized: Only General Super Admins can manage schools' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('tenants')
+        .update({ 
+          name, 
+          slug: slug?.toLowerCase().replace(/\s+/g, '-') 
+        })
+        .eq('id', schoolId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, school: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete School Action
+  app.delete('/api/schools/:id', authenticateUser, async (req: any, res: any) => {
+    const { id: schoolId } = req.params;
+    const userId = req.user.id;
+
+    try {
+      // Verify Super Admin status in General tenant
+      const { data: memberships } = await supabaseAdmin
+        .from('memberships')
+        .select('*, tenants!inner(*)')
+        .eq('user_id', userId)
+        .eq('tenants.slug', 'general')
+        .eq('role', 'super_admin');
+
+      if (!memberships || memberships.length === 0) {
+        return res.status(403).json({ error: 'Unauthorized: Only General Super Admins can delete schools' });
+      }
+
+      // Check if it's the general tenant (protect from deletion)
+      const { data: tenant } = await supabaseAdmin
+        .from('tenants')
+        .select('slug')
+        .eq('id', schoolId)
+        .single();
+      
+      if (tenant?.slug === 'general') {
+        return res.status(400).json({ error: 'Cannot delete the general management tenant' });
+      }
+
+      const { error } = await supabaseAdmin
+        .from('tenants')
+        .delete()
+        .eq('id', schoolId);
+
+      if (error) throw error;
+      res.json({ success: true, message: 'School deleted successfully' });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -133,23 +414,45 @@ async function startServer() {
 
       if (inviteError) throw inviteError;
 
-      // 3. If user exists, notify them
-      // We need to find the user by email using auth admin API
+      // Fetch tenant name for the email
+      const { data: tenantContent } = await supabaseAdmin
+        .from('tenants')
+        .select('name')
+        .eq('id', tenantId)
+        .single();
+      const schoolName = tenantContent?.name || 'Nexus LMS School';
+
+      // 3. Send invitation email
+      const appUrl = process.env.APP_URL || 'http://localhost:3000';
+      const inviteLink = `${appUrl}/accept-invite?id=${invitation.id}`;
+      
+      await sendEmail({
+        to: email.toLowerCase(),
+        subject: `Invitation to join ${schoolName}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+            <h1 style="color: #4f46e5;">Welcome to ${schoolName}!</h1>
+            <p>You have been invited to join <strong>${schoolName}</strong> as a <strong>${role}</strong> on Nexus LMS.</p>
+            <div style="margin: 32px 0;">
+              <a href="${inviteLink}" style="background-color: #4f46e5; color: white; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-weight: bold; display: inline-block;">Accept Invitation</a>
+            </div>
+            <p style="color: #64748b; font-size: 14px;">If you don't have an account, you'll be asked to create one first.</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 32px 0;" />
+            <p style="color: #94a3b8; font-size: 12px;">This is an automated message from Nexus LMS. Please do not reply.</p>
+          </div>
+        `
+      });
+
+      // 4. If user exists, notify them internally
       const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
       const existingUser = usersData?.users?.find((u: any) => u.email === email.toLowerCase());
 
       if (existingUser) {
-        const { data: tenant } = await supabaseAdmin
-          .from('tenants')
-          .select('name')
-          .eq('id', tenantId)
-          .single();
-
         await supabaseAdmin.rpc('create_notification', {
           p_tenant_id: tenantId,
           p_user_id: existingUser.id,
           p_title: 'New Invitation',
-          p_message: `You have been invited to join ${tenant?.name || 'a school'} as a ${role}.`,
+          p_message: `You have been invited to join ${schoolName} as a ${role}.`,
           p_type: 'info'
         });
       }

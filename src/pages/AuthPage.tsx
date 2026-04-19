@@ -7,7 +7,11 @@ import { useAuth } from '../context/AuthContext';
 
 export const AuthPage: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialMode = searchParams.get('mode');
+  const redirectPath = searchParams.get('redirect');
+
+  const [isLogin, setIsLogin] = useState(initialMode !== 'signup');
   const [isStudentLogin, setIsStudentLogin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
@@ -49,6 +53,10 @@ export const AuthPage: React.FC = () => {
           password 
         });
         if (error) throw error;
+        // If there's a redirect query parameter, use it
+        if (redirectPath) {
+          window.location.href = redirectPath;
+        }
       } else {
         // Basic validation
         if (!isStudentLogin && !trimmedEmail.includes('@')) {
@@ -68,6 +76,12 @@ export const AuthPage: React.FC = () => {
         });
         if (error) throw error;
         alert('Account created! Please sign in.');
+        
+        // After account creation, we still want to go to the redirect path if it exists
+        // but they need to sign in first as per current logic.
+        // We can make it easier by signing them in automatically, but Supabase auth.signUp 
+        // usually signs them in unless confirmation is required.
+        // The current logic manually switches back to login. Let's improve it.
         setIsLogin(true);
       }
     } catch (err: any) {

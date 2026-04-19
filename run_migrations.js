@@ -34,7 +34,8 @@ async function runMigrations() {
       '20240402010000_rename_tables.sql',
       '20240402011000_enhance_activities.sql',
       '20240402012000_security_hardening.sql',
-      '20240402013000_notification_preferences.sql'
+      '20240402013000_notification_preferences.sql',
+      '20240402014000_tenant_activation.sql'
     ];
 
     for (const file of filesToRun) {
@@ -44,9 +45,18 @@ async function runMigrations() {
         await client.query(sql);
         console.log(`Successfully ran migration: ${file}`);
       } catch (e) {
-        console.error(`Error running ${file}:`, e.message);
+        if (e.message.includes('already exists')) {
+          console.log(`Skipping already applied migration or overlapping statements in ${file}`);
+        } else {
+          console.error(`Error running ${file}:`, e.message);
+        }
       }
     }
+
+    // Refresh PostgREST schema cache
+    console.log('Reloading schema cache...');
+    await client.query("NOTIFY pgrst, 'reload schema';");
+    console.log('Schema cache reload requested.');
   } catch (err) {
     console.error('Error running migrations:', err);
   } finally {

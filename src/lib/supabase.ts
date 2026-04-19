@@ -40,6 +40,8 @@ export type Tenant = {
   name: string;
   slug: string;
   owner_id: string;
+  created_at: string;
+  status?: 'active' | 'pending' | 'deactivated';
 };
 
 export type Membership = {
@@ -77,4 +79,40 @@ export type XApiStatement = {
   metadata: any;
   is_public: boolean;
   created_at: string;
+};
+
+export type Post = {
+  id: string;
+  user_id: string;
+  tenant_id: string | null;
+  content: string;
+  type: 'social' | 'resource' | 'news';
+  metadata: any;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+  author_name?: string;
+  author_avatar?: string;
+  comments_count?: number;
+  likes_count?: number;
+  is_liked?: boolean;
+};
+
+export type Comment = {
+  id: string;
+  post_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  profiles?: Profile;
+};
+
+export type Friendship = {
+  id: string;
+  user_id: string;
+  friend_id: string;
+  status: 'pending' | 'accepted' | 'blocked';
+  created_at: string;
+  updated_at: string;
+  profiles?: Profile;
 };

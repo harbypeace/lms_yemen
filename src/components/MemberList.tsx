@@ -13,7 +13,9 @@ import {
   Terminal,
   Play,
   Trash2,
-  Save
+  Save,
+  Search,
+  Filter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -35,6 +37,10 @@ export const MemberList: React.FC = () => {
   // API Test state
   const [apiResult, setApiResult] = useState<any>(null);
   const [apiLoading, setApiLoading] = useState(false);
+
+  // Search and Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
 
   const myRole = myMemberships.find(m => m.tenant_id === activeTenant?.id)?.role;
   const isAdmin = myRole === 'super_admin' || myRole === 'school_admin';
@@ -153,6 +159,20 @@ export const MemberList: React.FC = () => {
     }
   };
 
+  const filteredMembers = members.filter(member => {
+    const matchesSearch = 
+      (member.profiles?.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (member.profiles?.email || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesRole = roleFilter === 'all' || member.role === roleFilter;
+    return matchesSearch && matchesRole;
+  });
+
+  const filteredInvitations = invitations.filter(invite => {
+    const matchesSearch = (invite.email || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesRole = roleFilter === 'all' || invite.role === roleFilter;
+    return matchesSearch && matchesRole;
+  });
+
   return (
     <div className="space-y-8">
       {/* API Tester Section */}
@@ -182,17 +202,44 @@ export const MemberList: React.FC = () => {
         </div>
       </section>
 
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-900">Members & Invitations</h2>
-        {isAdmin && (
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-          >
-            <UserPlus className="w-5 h-5" />
-            Invite Member
-          </button>
-        )}
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <h2 className="text-2xl font-bold text-slate-900 shrink-0">Members & Invitations</h2>
+        
+        <div className="flex flex-1 items-center gap-3 w-full md:w-auto">
+          <div className="relative flex-1 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all shadow-sm"
+            />
+          </div>
+          <div className="relative shrink-0">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all shadow-sm appearance-none min-w-[140px]"
+            >
+              <option value="all">All Roles</option>
+              <option value="school_admin">Admins</option>
+              <option value="teacher">Teachers</option>
+              <option value="student">Students</option>
+              <option value="parent">Parents</option>
+            </select>
+          </div>
+          {isAdmin && (
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 shrink-0"
+            >
+              <UserPlus className="w-5 h-5" />
+              <span className="hidden sm:inline">Invite Member</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -205,11 +252,14 @@ export const MemberList: React.FC = () => {
         <div className="space-y-6">
           {/* Active Members */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-6 border-b border-slate-200">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
               <h3 className="font-bold text-slate-900 flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                Active Members ({members.length})
+                Active Members ({filteredMembers.length})
               </h3>
+              {(searchQuery || roleFilter !== 'all') && (
+                <span className="text-xs text-slate-400 font-medium italic">Filtered view</span>
+              )}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -222,7 +272,7 @@ export const MemberList: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {members.map((member) => (
+                  {filteredMembers.length > 0 ? filteredMembers.map((member) => (
                     <tr key={member.id} className="hover:bg-slate-50 transition-all group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -298,7 +348,22 @@ export const MemberList: React.FC = () => {
                         </td>
                       )}
                     </tr>
-                  ))}
+                  )) : (
+                    <tr>
+                      <td colSpan={isAdmin ? 4 : 3} className="px-6 py-12 text-center">
+                        <div className="flex flex-col items-center gap-2 text-slate-400">
+                          <Users className="w-12 h-12 opacity-20" />
+                          <p className="font-medium text-sm">No members matching your filters</p>
+                          <button 
+                            onClick={() => { setSearchQuery(''); setRoleFilter('all'); }}
+                            className="text-xs text-indigo-600 font-bold hover:underline"
+                          >
+                            Clear Filters
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -307,14 +372,14 @@ export const MemberList: React.FC = () => {
           {/* Pending Invitations */}
           {invitations.length > 0 && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-slate-200">
+              <div className="p-6 border-b border-slate-200 flex items-center justify-between">
                 <h3 className="font-bold text-slate-900 flex items-center gap-2">
                   <AlertCircle className="w-5 h-5 text-amber-500" />
-                  Pending Invitations ({invitations.length})
+                  Pending Invitations ({filteredInvitations.length})
                 </h3>
               </div>
               <div className="divide-y divide-slate-100">
-                {invitations.map((invite) => (
+                {filteredInvitations.length > 0 ? filteredInvitations.map((invite) => (
                   <div key={invite.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-all">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center">
@@ -334,7 +399,11 @@ export const MemberList: React.FC = () => {
                       )}
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="p-8 text-center text-slate-400 text-sm italic">
+                    No invitations matching filters
+                  </div>
+                )}
               </div>
             </div>
           )}

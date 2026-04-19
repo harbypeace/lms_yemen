@@ -19,7 +19,8 @@ import {
   Upload,
   CreditCard,
   CheckCircle,
-  Share2
+  Share2,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CourseList } from '../components/CourseList';
@@ -32,6 +33,7 @@ import { Settings } from '../components/Settings';
 import { GamificationWidget } from '../components/GamificationWidget';
 import { GlobalLeaderboard } from '../components/GlobalLeaderboard';
 import { UserManagement } from '../components/UserManagement';
+import { GlobalUserManagement } from '../components/GlobalUserManagement';
 import { BulkImport } from '../components/BulkImport';
 import { SubscriptionManagement } from '../components/SubscriptionManagement';
 import { GamificationOverlay } from '../components/GamificationOverlay';
@@ -41,17 +43,21 @@ import { cn } from '../lib/utils';
 import { NotificationSystem } from '../components/NotificationSystem';
 import { PublicActivityFeed } from '../components/PublicActivityFeed';
 import { IntegrationManager } from '../components/IntegrationManager';
+import { SocialHub } from '../components/SocialHub';
 
 export const Dashboard: React.FC = () => {
   const { profile, activeTenant, memberships, setActiveTenant, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'my-courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings' | 'leaderboard' | 'user-management' | 'bulk-import' | 'subscriptions' | 'integrations'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'my-courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings' | 'leaderboard' | 'user-management' | 'bulk-import' | 'subscriptions' | 'integrations' | 'system-users' | 'social'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
 
   const [dashboardStats, setDashboardStats] = useState({ courses: 0, members: 0, progress: 0, enrolledCourses: 0, completedLessons: 0 });
   const [recentCourses, setRecentCourses] = useState<any[]>([]);
+  const [recentNews, setRecentNews] = useState<any[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
+
+  const isSuperAdmin = memberships.some(m => m.role === 'super_admin');
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -114,6 +120,15 @@ export const Dashboard: React.FC = () => {
           .order('created_at', { ascending: false })
           .limit(3);
 
+        // Fetch recent news
+        const { data: news } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('tenant_id', activeTenant.id)
+          .eq('type', 'news')
+          .order('created_at', { ascending: false })
+          .limit(2);
+
         setDashboardStats({
           courses: coursesCount || 0,
           members: membersCount || 0,
@@ -122,6 +137,7 @@ export const Dashboard: React.FC = () => {
           completedLessons: completedLessonsCount
         });
         setRecentCourses(recent || []);
+        setRecentNews(news || []);
       } catch (error) {
         console.error("Error loading dashboard data:", error);
       } finally {
@@ -187,6 +203,12 @@ export const Dashboard: React.FC = () => {
             active={activeTab === 'dashboard'} 
             onClick={() => handleTabChange('dashboard')}
           />
+          <SidebarItem 
+            icon={Share2} 
+            label="Social Hub" 
+            active={activeTab === 'social'} 
+            onClick={() => handleTabChange('social')}
+          />
           {(activeRole === 'super_admin' || activeRole === 'school_admin') && (
             <SidebarItem 
               icon={Building2} 
@@ -237,6 +259,14 @@ export const Dashboard: React.FC = () => {
                   label="Integrations" 
                   active={activeTab === 'integrations'} 
                   onClick={() => handleTabChange('integrations')}
+                />
+              )}
+              {activeRole === 'super_admin' && (
+                <SidebarItem 
+                  icon={Shield} 
+                  label="System Users" 
+                  active={activeTab === 'system-users'} 
+                  onClick={() => handleTabChange('system-users')}
                 />
               )}
             </>
@@ -314,6 +344,11 @@ export const Dashboard: React.FC = () => {
                   <div className="flex items-center gap-2 text-slate-500 text-xs md:text-sm mt-1">
                     <School className="w-3 h-3 md:w-4 md:h-4 hidden sm:block" />
                     <span className="truncate max-w-[100px] sm:max-w-none">{activeTenant?.name || 'No School Selected'}</span>
+                    {activeTenant?.status === 'pending' && (
+                      <span className="px-2 py-0.5 bg-amber-50 text-amber-600 border border-amber-100 rounded-full text-[9px] font-black uppercase tracking-widest hidden sm:block">
+                        Activation Pending
+                      </span>
+                    )}
                     <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase tracking-wider hidden sm:block">
                       {activeRole || 'No Role'}
                     </span>
@@ -349,7 +384,12 @@ export const Dashboard: React.FC = () => {
                             )}
                           >
                             <div>
-                              <div className="font-bold text-sm">{membership.tenants.name}</div>
+                              <div className="font-bold text-sm flex items-center gap-2">
+                                {membership.tenants.name}
+                                {membership.tenants.status === 'pending' && (
+                                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+                                )}
+                              </div>
                               <div className="text-[10px] uppercase font-bold opacity-60">{membership.role}</div>
                             </div>
                             {activeTenant?.id === membership.tenant_id && (
@@ -393,7 +433,33 @@ export const Dashboard: React.FC = () => {
           </div>
         </header>
 
-        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-8">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-8 relative">
+          {activeTenant?.status === 'pending' && (
+            <div className="absolute inset-x-4 md:inset-x-8 top-4 md:top-8 bottom-0 bg-slate-50/80 backdrop-blur-[2px] z-[5] rounded-3xl flex items-center justify-center p-6 text-center">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="max-w-md bg-white p-8 rounded-3xl shadow-2xl border border-amber-100"
+              >
+                <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 mx-auto mb-6">
+                  <Shield className="w-8 h-8" />
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-3">Activation Required</h3>
+                <p className="text-slate-500 font-medium mb-6">
+                  This institution is currently in a "Draft" state. {isSuperAdmin ? 'Please share the invitation link with the school manager to activate this branch.' : 'The school administrator must accept their invitation before content becomes accessible.'}
+                </p>
+                {isSuperAdmin && (
+                  <button 
+                    onClick={() => setActiveTab('schools')}
+                    className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                  >
+                    View Invitation Link
+                  </button>
+                )}
+              </motion.div>
+            </div>
+          )}
+
           {activeTab === 'dashboard' && activeRole === 'parent' && (
             <ParentDashboard />
           )}
@@ -463,19 +529,32 @@ export const Dashboard: React.FC = () => {
 
                   <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                      <h3 className="font-bold text-slate-900">Announcements</h3>
-                      <button className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
+                      <h3 className="font-bold text-slate-900">Latest News & Announcements</h3>
+                      <button onClick={() => setActiveTab('social')} className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
                     </div>
                     <div className="p-6 space-y-4">
-                      {[1, 2].map((item) => (
-                        <div key={item} className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-                          <h4 className="font-bold text-indigo-900">School Holiday Notice</h4>
-                          <p className="text-sm text-indigo-700 mt-1">
-                            Please note that the school will be closed next Monday for the national holiday.
+                      {recentNews.length > 0 ? recentNews.map((item) => (
+                        <div 
+                          key={item.id} 
+                          onClick={() => setActiveTab('social')}
+                          className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100/50 cursor-pointer hover:bg-indigo-50 hover:border-indigo-300 transition-all group"
+                        >
+                          <h4 className="font-bold text-indigo-900 flex items-center justify-between">
+                            Announcement
+                            <ChevronRight className="w-4 h-4 text-indigo-300 group-hover:text-indigo-600 transition-colors" />
+                          </h4>
+                          <p className="text-sm text-indigo-700 mt-1 whitespace-pre-wrap line-clamp-2">
+                            {item.content}
                           </p>
-                          <span className="text-[10px] font-bold text-indigo-400 uppercase mt-2 block">2 hours ago</span>
+                          <span className="text-[10px] font-bold text-indigo-400 uppercase mt-2 block">
+                            {new Date(item.created_at).toLocaleDateString()}
+                          </span>
                         </div>
-                      ))}
+                      )) : (
+                        <div className="text-center py-4 text-slate-400 text-sm italic">
+                          No recent announcements.
+                        </div>
+                      )}
                     </div>
                   </section>
                 </div>
@@ -509,6 +588,10 @@ export const Dashboard: React.FC = () => {
           {activeTab === 'leaderboard' && <GlobalLeaderboard />}
 
           {activeTab === 'integrations' && <IntegrationManager />}
+
+          {activeTab === 'system-users' && <GlobalUserManagement />}
+
+          {activeTab === 'social' && <SocialHub />}
 
           {activeTab === 'settings' && <Settings />}
         </div>

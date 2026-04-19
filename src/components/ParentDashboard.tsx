@@ -38,6 +38,7 @@ export const ParentDashboard: React.FC = () => {
   const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Add Child Form
   const [newChild, setNewChild] = useState({
@@ -331,6 +332,12 @@ export const ParentDashboard: React.FC = () => {
     }
   };
 
+  const filteredStudents = students.filter(s => 
+    s.student.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.student.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.student as any).custom_id?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -339,6 +346,16 @@ export const ParentDashboard: React.FC = () => {
           <p className="text-slate-500 text-sm">Monitor your children's learning progress and activities.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <div className="relative group mr-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+            <input
+              type="text"
+              placeholder="Search children..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm shadow-sm transition-all"
+            />
+          </div>
           {error && (
             <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-2 rounded-xl border border-red-100 text-sm font-medium animate-pulse">
               <XCircle className="w-4 h-4" />
@@ -403,9 +420,9 @@ export const ParentDashboard: React.FC = () => {
             <div key={i} className="h-48 bg-slate-100 animate-pulse rounded-2xl" />
           ))}
         </div>
-      ) : students.length > 0 ? (
+      ) : filteredStudents.length > 0 ? (
         <div className="grid grid-cols-1 gap-8">
-          {students.map((data) => (
+          {filteredStudents.map((data) => (
             <motion.div
               key={data.student.id}
               initial={{ opacity: 0, y: 20 }}

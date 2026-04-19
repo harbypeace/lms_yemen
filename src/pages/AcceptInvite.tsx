@@ -55,12 +55,20 @@ export const AcceptInvite: React.FC = () => {
             <p className="text-slate-500">
               You need to be signed in to accept this invitation. Please sign in or create an account first.
             </p>
-            <button 
-              onClick={() => window.location.href = '/'}
-              className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all"
-            >
-              Go to Sign In
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => window.location.href = `/?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}&mode=signup`}
+                className="flex-1 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all text-sm"
+              >
+                Sign Up
+              </button>
+              <button 
+                onClick={() => window.location.href = `/?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}&mode=login`}
+                className="flex-1 py-3 border border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-all text-sm"
+              >
+                Sign In
+              </button>
+            </div>
           </div>
         ) : success ? (
           <div className="space-y-4">

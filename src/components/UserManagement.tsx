@@ -33,9 +33,12 @@ export const UserManagement: React.FC = () => {
 
   useEffect(() => {
     if (activeTenant && activeTab !== 'bulk-import') {
-      fetchUsers();
+      const timer = setTimeout(() => {
+        fetchUsers();
+      }, 300);
+      return () => clearTimeout(timer);
     }
-  }, [activeTenant, activeTab]);
+  }, [activeTenant, activeTab, searchQuery]);
 
   const fetchUsers = async () => {
     if (activeTab === 'bulk-import') return;
@@ -46,7 +49,7 @@ export const UserManagement: React.FC = () => {
         .select('*, memberships!inner(*)')
         .eq('memberships.tenant_id', activeTenant?.id)
         .eq('memberships.role', activeTab === 'students' ? 'student' : 'parent')
-        .ilike('full_name', `%${searchQuery}%`)
+        .or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%`)
         .limit(50);
 
       if (error) throw error;
@@ -180,11 +183,10 @@ export const UserManagement: React.FC = () => {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               type="text"
-              placeholder={`Search ${activeTab}...`}
+              placeholder={`Search ${activeTab} by name, phone or username...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && fetchUsers()}
-              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
             />
           </div>
         )}

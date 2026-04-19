@@ -32,6 +32,7 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'content' | 'quiz' | 'notes' | 'manage'>('content');
   const [prerequisitesMet, setPrerequisitesMet] = useState(true);
+  const [missingPrereqTitles, setMissingPrereqTitles] = useState<string[]>([]);
 
   useEffect(() => {
     fetchCourseData();
@@ -58,8 +59,17 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
           .in('course_id', courseData.prerequisites);
         
         const completedIds = completed?.map(c => c.course_id) || [];
-        const allMet = courseData.prerequisites.every((id: string) => completedIds.includes(id));
-        setPrerequisitesMet(allMet);
+        const missingIds = courseData.prerequisites.filter((id: string) => !completedIds.includes(id));
+        
+        if (missingIds.length > 0) {
+          const { data: missingCourses } = await supabase
+            .from('courses')
+            .select('title')
+            .in('id', missingIds);
+          setMissingPrereqTitles(missingCourses?.map(c => c.title) || []);
+        }
+
+        setPrerequisitesMet(missingIds.length === 0);
       } else {
         setPrerequisitesMet(true);
       }
@@ -155,7 +165,19 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ courseId, onBack }) 
           <Lock className="w-10 h-10 text-slate-400" />
         </div>
         <h2 className="text-2xl font-bold text-slate-900 mb-2">Course Locked</h2>
-        <p className="text-slate-500 mb-8">You must complete the prerequisite courses before accessing this content.</p>
+        <p className="text-slate-500 mb-6">You must complete the following prerequisite courses before accessing this content:</p>
+        
+        <div className="max-w-md mx-auto mb-10 space-y-3">
+          {missingPrereqTitles.map((title, idx) => (
+            <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-3 text-left">
+              <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-sm shrink-0">
+                {idx + 1}
+              </div>
+              <span className="font-semibold text-slate-700">{title}</span>
+            </div>
+          ))}
+        </div>
+
         <button 
           onClick={onBack}
           className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
