@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { xapiLite } from '../services/xapiService';
 import { XApiStatement } from '../lib/supabase';
+import { formatRelativeTime } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Activity, User, Clock, Award } from 'lucide-react';
+
 
 export const PublicActivityFeed: React.FC<{ activityId?: string }> = ({ activityId }) => {
   const [statements, setStatements] = useState<(XApiStatement & { profiles: { full_name: string, avatar_url: string } })[]>([]);
@@ -90,7 +92,7 @@ export const PublicActivityFeed: React.FC<{ activityId?: string }> = ({ activity
                   )}
                   <div className="mt-1 flex items-center gap-1 text-[10px] text-slate-400">
                     <Clock className="w-3 h-3" />
-                    <span>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span>{formatRelativeTime(s.created_at)}</span>
                   </div>
                 </div>
               </motion.div>

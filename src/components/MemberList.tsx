@@ -15,9 +15,100 @@ import {
   Trash2,
   Save,
   Search,
-  Filter
+  Filter,
+  GraduationCap,
+  BookOpen,
+  Building2,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+import { cn } from '../lib/utils';
+
+const ROLES = [
+  { id: 'student', label: 'Student', icon: GraduationCap, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
+  { id: 'teacher', label: 'Teacher', icon: BookOpen, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  { id: 'school_admin', label: 'School Admin', icon: Building2, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
+  { id: 'super_admin', label: 'Super Admin', icon: Shield, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200' },
+  { id: 'parent', label: 'Parent', icon: Users, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200' }
+] as const;
+
+const RoleDropdown = ({ value, onChange, disabled }: { value: string, onChange: (v: string) => void, disabled?: boolean }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const selectedRole = ROLES.find(r => r.id === value) || ROLES[0];
+  const SelectedIcon = selectedRole.icon;
+
+  useEffect(() => {
+     const handleClickOutside = (e: MouseEvent) => {
+        if (!(e.target as Element).closest('.role-dropdown-container')) {
+           setIsOpen(false);
+        }
+     };
+     document.addEventListener('mousedown', handleClickOutside);
+     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative role-dropdown-container min-w-[160px]">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "flex items-center justify-between w-full px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all",
+          disabled && "opacity-50 cursor-not-allowed"
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <div className={cn("p-1.5 rounded-md", selectedRole.bg, selectedRole.color)}>
+            <SelectedIcon className="w-4 h-4" />
+          </div>
+          <span className="text-sm font-bold text-slate-700">{selectedRole.label}</span>
+        </div>
+        <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", isOpen && "rotate-180")} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -5 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -5 }}
+            transition={{ duration: 0.15 }}
+            className="absolute left-0 top-full mt-2 w-full bg-white border border-slate-100 rounded-2xl shadow-xl z-50 py-1.5 overflow-hidden"
+          >
+            {ROLES.map((role) => {
+              const RoleIcon = role.icon;
+              return (
+                <button
+                  key={role.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(role.id);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 w-full px-3 py-2.5 text-left text-sm transition-all hover:bg-slate-50",
+                    value === role.id ? "bg-indigo-50/50" : ""
+                  )}
+                >
+                  <div className={cn("p-1.5 rounded-md", role.bg, role.color)}>
+                    <RoleIcon className="w-4 h-4" />
+                  </div>
+                  <span className={cn("font-semibold", value === role.id ? "text-indigo-900" : "text-slate-600")}>
+                    {role.label}
+                  </span>
+                  {value === role.id && <CheckCircle2 className="w-4 h-4 text-indigo-600 ml-auto" />}
+                </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 export const MemberList: React.FC = () => {
   const { activeTenant, user: currentUser, memberships: myMemberships, session } = useAuth();
@@ -287,21 +378,25 @@ export const MemberList: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         {editingMember === member.id ? (
-                          <select 
-                            value={newRole}
-                            onChange={(e) => setNewRole(e.target.value)}
-                            className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-sm font-semibold focus:ring-2 focus:ring-indigo-500"
-                          >
-                            <option value="student">Student</option>
-                            <option value="teacher">Teacher</option>
-                            <option value="school_admin">School Admin</option>
-                            <option value="super_admin">Super Admin</option>
-                            <option value="parent">Parent</option>
-                          </select>
+                          <RoleDropdown 
+                            value={newRole} 
+                            onChange={setNewRole} 
+                            disabled={updating}
+                          />
                         ) : (
-                          <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold uppercase tracking-wider">
-                            {member.role.replace('_', ' ')}
-                          </span>
+                          <div className="flex items-center">
+                            {(() => {
+                               const roleDef = ROLES.find(r => r.id === member.role);
+                               if (!roleDef) return <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold uppercase tracking-wider">{member.role.replace('_', ' ')}</span>;
+                               const RoleIcon = roleDef.icon;
+                               return (
+                                 <span className={cn("flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider", roleDef.bg, roleDef.color)}>
+                                   <RoleIcon className="w-3.5 h-3.5" />
+                                   {roleDef.label}
+                                 </span>
+                               )
+                            })()}
+                          </div>
                         )}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-500">
@@ -448,17 +543,11 @@ export const MemberList: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-                    <select
+                    <RoleDropdown 
                       value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
-                    >
-                      <option value="student">Student</option>
-                      <option value="teacher">Teacher</option>
-                      <option value="school_admin">School Admin</option>
-                      <option value="super_admin">Super Admin</option>
-                      <option value="parent">Parent</option>
-                    </select>
+                      onChange={setInviteRole}
+                      disabled={inviting}
+                    />
                 </div>
                 <div className="flex gap-3 pt-4">
                   <button

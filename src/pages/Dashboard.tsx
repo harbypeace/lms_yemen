@@ -42,8 +42,10 @@ import { cn } from '../lib/utils';
 
 import { NotificationSystem } from '../components/NotificationSystem';
 import { PublicActivityFeed } from '../components/PublicActivityFeed';
+import { formatRelativeTime } from '../lib/utils';
 import { IntegrationManager } from '../components/IntegrationManager';
 import { SocialHub } from '../components/SocialHub';
+
 
 export const Dashboard: React.FC = () => {
   const { profile, activeTenant, memberships, setActiveTenant, signOut } = useAuth();
@@ -547,7 +549,7 @@ export const Dashboard: React.FC = () => {
                             {item.content}
                           </p>
                           <span className="text-[10px] font-bold text-indigo-400 uppercase mt-2 block">
-                            {new Date(item.created_at).toLocaleDateString()}
+                            {formatRelativeTime(item.created_at)}
                           </span>
                         </div>
                       )) : (

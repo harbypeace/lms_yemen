@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, Post } from '../lib/supabase';
+import { supabase, Post, Comment } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { 
   MessageSquare, 
@@ -17,10 +17,11 @@ import {
   User as UserCircle,
   Newspaper,
   BookOpen,
-  Users
+  Users,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../lib/utils';
+import { cn, formatRelativeTime } from '../lib/utils';
 
 export const SocialHub: React.FC = () => {
   const { user, activeTenant } = useAuth();
@@ -38,6 +39,12 @@ export const SocialHub: React.FC = () => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
 
+  // Comments state
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [comments, setComments] = useState<Record<string, Comment[]>>({});
+  const [newComment, setNewComment] = useState<Record<string, string>>({});
+  const [submittingComment, setSubmittingComment] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     if (user) {
       if (activeTab === 'friends') {
@@ -53,13 +60,23 @@ export const SocialHub: React.FC = () => {
     try {
       const { data: friendships, error } = await supabase
         .from('friendships')
-        .select('*, profiles:friend_id(*)')
+        .select('*')
         .or(`user_id.eq.${user?.id},friend_id.eq.${user?.id}`);
 
       if (error) throw error;
       
-      const accepted = friendships.filter(f => f.status === 'accepted');
-      const pending = friendships.filter(f => f.status === 'pending' && f.friend_id === user?.id);
+      const otherUserIds = friendships?.map(f => f.user_id === user?.id ? f.friend_id : f.user_id) || [];
+      const { data: profiles } = otherUserIds.length > 0 
+        ? await supabase.from('profiles').select('*').in('id', otherUserIds)
+        : { data: [] };
+        
+      const enrichedFriendships = friendships?.map(f => ({
+        ...f,
+        profiles: profiles?.find(p => p.id === (f.user_id === user?.id ? f.friend_id : f.user_id))
+      })) || [];
+      
+      const accepted = enrichedFriendships.filter(f => f.status === 'accepted');
+      const pending = enrichedFriendships.filter(f => f.status === 'pending' && f.friend_id === user?.id);
       
       setFriends(accepted);
       setRequests(pending);
@@ -114,6 +131,20 @@ export const SocialHub: React.FC = () => {
         .from('friendships')
         .update({ status: 'accepted' })
         .eq('id', requestId);
+      
+      if (error) throw error;
+      fetchFriends();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const removeFriend = async (friendshipId: string) => {
+    try {
+      const { error } = await supabase
+        .from('friendships')
+        .delete()
+        .eq('id', friendshipId);
       
       if (error) throw error;
       fetchFriends();
@@ -202,6 +233,55 @@ export const SocialHub: React.FC = () => {
       } : p));
     } catch (err) {
       console.error('Error toggling like:', err);
+    }
+  };
+
+  const loadComments = async (postId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*, profiles!inner(full_name, avatar_url)')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+        
+      if (error) throw error;
+      setComments(prev => ({ ...prev, [postId]: data || [] }));
+    } catch (err) {
+      console.error('Error loading comments:', err);
+    }
+  };
+
+  const toggleComments = (postId: string) => {
+    if (expandedPostId === postId) {
+      setExpandedPostId(null);
+    } else {
+      setExpandedPostId(postId);
+      if (!comments[postId]) {
+        loadComments(postId);
+      }
+    }
+  };
+
+  const submitComment = async (postId: string) => {
+    const text = newComment[postId];
+    if (!user || !text?.trim()) return;
+
+    setSubmittingComment(prev => ({ ...prev, [postId]: true }));
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .insert([{ post_id: postId, user_id: user.id, content: text }]);
+        
+      if (error) throw error;
+      
+      // Reload comments and update posts count
+      await loadComments(postId);
+      setNewComment(prev => ({ ...prev, [postId]: '' }));
+      setPosts(posts.map(p => p.id === postId ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p));
+    } catch (err) {
+      console.error('Error submitting comment:', err);
+    } finally {
+      setSubmittingComment(prev => ({ ...prev, [postId]: false }));
     }
   };
 
@@ -342,11 +422,21 @@ export const SocialHub: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {friends.map(f => {
                     const friend = f.friend_id === user?.id ? f.user_id : f.friend_id; 
-                    // Profiles joined as friend_id in the simple select, might need adjustment for bidirectional
                     return (
-                      <div key={f.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col items-center text-center group hover:bg-white hover:shadow-md transition-all">
-                        <div className="w-16 h-16 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xl mb-3 shadow-inner">
-                          {f.profiles?.full_name?.[0]}
+                      <div key={f.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col items-center text-center group hover:bg-white hover:shadow-md transition-all relative">
+                        <button 
+                          onClick={() => removeFriend(f.id)}
+                          className="absolute top-2 right-2 p-1.5 bg-red-50 text-red-600 rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-red-100"
+                          title="Remove Connection"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xl mb-3 shadow-inner overflow-hidden border-2 border-white">
+                          {f.profiles?.avatar_url ? (
+                            <img src={f.profiles.avatar_url} alt={f.profiles.full_name} className="w-full h-full object-cover" />
+                          ) : (
+                            f.profiles?.full_name?.[0]
+                          )}
                         </div>
                         <h4 className="font-bold text-slate-900 truncate w-full">{f.profiles?.full_name}</h4>
                         <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mt-1">Connection</p>
@@ -392,7 +482,7 @@ export const SocialHub: React.FC = () => {
                       )}
                     </h4>
                     <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
-                      <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                      <span>{formatRelativeTime(post.created_at)}</span>
                       <span>•</span>
                       {post.is_public ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
                     </div>
@@ -411,14 +501,19 @@ export const SocialHub: React.FC = () => {
                     href={post.metadata.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-4 flex items-center gap-3 p-4 bg-slate-50 border border-slate-100 rounded-2xl group hover:bg-slate-100 transition-all"
+                    className="mt-4 flex items-center gap-4 p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl group hover:bg-emerald-50 transition-all shadow-sm"
                   >
-                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm border border-slate-100 group-hover:scale-110 transition-transform">
+                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100 group-hover:scale-105 transition-transform flex-shrink-0">
                       <LinkIcon className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-900 truncate">{post.metadata.link_title || post.metadata.link}</p>
-                      <p className="text-xs text-slate-500 truncate">{post.metadata.link}</p>
+                      <h5 className="text-sm font-bold text-slate-900 truncate group-hover:text-emerald-700 transition-colors">
+                        {post.metadata.link_title || post.metadata.link}
+                      </h5>
+                      <p className="text-xs text-slate-500 truncate mt-0.5">{post.metadata.link}</p>
+                    </div>
+                    <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0">
+                       <Share2 className="w-4 h-4" />
                     </div>
                   </a>
                 )}
@@ -437,7 +532,10 @@ export const SocialHub: React.FC = () => {
                     <Heart className={cn("w-4 h-4", post.is_liked && "fill-current")} />
                     {post.likes_count || 0}
                   </button>
-                  <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all">
+                  <button 
+                    onClick={() => toggleComments(post.id)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all"
+                  >
                     <MessageSquare className="w-4 h-4" />
                     {post.comments_count || 0}
                   </button>
@@ -446,8 +544,78 @@ export const SocialHub: React.FC = () => {
                   <Share2 className="w-4 h-4" />
                 </button>
               </div>
+
+              {/* Comments Section */}
+              <AnimatePresence>
+                {expandedPostId === post.id && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-slate-50 border-t border-slate-100 px-6 py-4"
+                  >
+                    <div className="space-y-4 mb-4">
+                      {!comments[post.id] ? (
+                        <div className="flex justify-center p-4">
+                          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+                        </div>
+                      ) : comments[post.id].length === 0 ? (
+                        <p className="text-center text-sm text-slate-500 italic py-2">No comments yet. Be the first!</p>
+                      ) : (
+                        comments[post.id].map(comment => (
+                          <div key={comment.id} className="flex gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-100 flex-shrink-0 overflow-hidden">
+                              {comment.profiles?.avatar_url ? (
+                                <img src={comment.profiles.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs font-bold">
+                                  {comment.profiles?.full_name?.[0] || 'U'}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1 bg-white p-3 rounded-2xl rounded-tl-none border border-slate-100 shadow-sm">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="font-bold text-slate-900 text-xs">{comment.profiles?.full_name || 'Anonymous'}</span>
+                                <span className="text-[10px] text-slate-400 font-medium">{formatRelativeTime(comment.created_at)}</span>
+                              </div>
+                              <p className="text-sm text-slate-700">{comment.content}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    
+                    {/* Add Comment Input */}
+                    <div className="flex gap-3 items-end">
+                      <div className="flex-1 relative">
+                        <textarea
+                          placeholder="Write a comment..."
+                          value={newComment[post.id] || ''}
+                          onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              submitComment(post.id);
+                            }
+                          }}
+                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm resize-none"
+                          rows={1}
+                        />
+                      </div>
+                      <button 
+                        onClick={() => submitComment(post.id)}
+                        disabled={!newComment[post.id]?.trim() || submittingComment[post.id]}
+                        className="p-3 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-md disabled:opacity-50 flex-shrink-0"
+                      >
+                        {submittingComment[post.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ))
+
         )}
       </div>
 
@@ -478,7 +646,7 @@ export const SocialHub: React.FC = () => {
               <form onSubmit={handleCreatePost} className="space-y-6">
                 <div>
                   <textarea
-                    placeholder="What's on your mind?"
+                    placeholder={newPost.type === 'resource' ? "Describe this resource..." : "What's on your mind?"}
                     value={newPost.content}
                     onChange={(e) => setNewPost({ ...newPost, content: e.target.value })}
                     rows={4}
@@ -497,17 +665,19 @@ export const SocialHub: React.FC = () => {
                       <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
                         type="url"
-                        placeholder="Resource Link (URL)"
+                        placeholder="Resource Link (URL) *"
                         value={newPost.linkUrl}
                         onChange={(e) => setNewPost({ ...newPost, linkUrl: e.target.value })}
+                        required={newPost.type === 'resource'}
                         className="w-full pl-12 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all"
                       />
                     </div>
                     <input
                       type="text"
-                      placeholder="Resource Title (optional)"
+                      placeholder="Resource Title *"
                       value={newPost.linkTitle}
                       onChange={(e) => setNewPost({ ...newPost, linkTitle: e.target.value })}
+                      required={newPost.type === 'resource'}
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all"
                     />
                   </motion.div>
