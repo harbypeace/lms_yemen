@@ -988,7 +988,7 @@ async function startServer() {
 
   // Create Course Action
   app.post('/api/courses', authenticateUser, async (req: any, res: any) => {
-    const { title, description, tenantId, prerequisites = [] } = req.body;
+    const { title, description, img_url, slug, tenantId, prerequisites = [] } = req.body;
     const userId = req.user.id;
 
     try {
@@ -1010,6 +1010,8 @@ async function startServer() {
         .insert({
           title,
           description,
+          img_url,
+          slug,
           tenant_id: tenantId,
           prerequisites
         })
@@ -1046,6 +1048,144 @@ async function startServer() {
     }
   });
 
+  // Create Module Action
+  app.post('/api/modules', authenticateUser, async (req: any, res: any) => {
+    const { title, courseId, tenantId, orderIndex, img_url, slug, metadata } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!['super_admin', 'school_admin', 'teacher'].includes(membership?.role)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('modules')
+        .insert([{
+          title,
+          course_id: courseId,
+          order_index: orderIndex || 0,
+          img_url,
+          slug,
+          metadata: metadata || {}
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ success: true, module: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Create Lesson Action
+  app.post('/api/lessons', authenticateUser, async (req: any, res: any) => {
+    const { title, moduleId, tenantId, orderIndex, img_url, slug, metadata } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!['super_admin', 'school_admin', 'teacher'].includes(membership?.role)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('lessons')
+        .insert([{
+          title,
+          module_id: moduleId,
+          order_index: orderIndex || 0,
+          img_url,
+          slug,
+          metadata: metadata || {}
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ success: true, lesson: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Update Module Action
+  app.put('/api/modules/:id', authenticateUser, async (req: any, res: any) => {
+    const { id } = req.params;
+    const { title, orderIndex, img_url, slug, metadata, tenantId } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!['super_admin', 'school_admin', 'teacher'].includes(membership?.role)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('modules')
+        .update({ title, order_index: orderIndex, img_url, slug, metadata })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, module: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Update Lesson Action
+  app.put('/api/lessons/:id', authenticateUser, async (req: any, res: any) => {
+    const { id } = req.params;
+    const { title, orderIndex, img_url, slug, metadata, tenantId } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!['super_admin', 'school_admin', 'teacher'].includes(membership?.role)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('lessons')
+        .update({ title, order_index: orderIndex, img_url, slug, metadata })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, lesson: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Generate Demo Action
   app.post('/api/demo', authenticateUser, async (req: any, res: any) => {
     const { tenantId } = req.body;
@@ -1064,12 +1204,18 @@ async function startServer() {
         return res.status(403).json({ error: 'Unauthorized: Only admins and teachers can generate demo courses' });
       }
 
+      // Fetch activity types for mapping
+      const { data: types } = await supabaseAdmin.from('activity_types').select('*');
+      const typeMap = (types || []).reduce((acc: any, t) => ({ ...acc, [t.name]: t.id }), {});
+
       // 2. Create Course
       const { data: courseData, error: courseError } = await supabaseAdmin
         .from('courses')
         .insert({
           title: 'Gamification Demo Course',
           description: 'A demo course to test XP, levels, and badges.',
+          img_url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=60',
+          slug: 'gamification-demo-course',
           tenant_id: tenantId
         })
         .select()
@@ -1083,6 +1229,8 @@ async function startServer() {
         .insert({
           course_id: courseData.id,
           title: 'Introduction to Gamification',
+          slug: 'intro-to-gamification',
+          img_url: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&auto=format&fit=crop&q=60',
           order_index: 0
         })
         .select()
@@ -1096,6 +1244,8 @@ async function startServer() {
         .insert({
           module_id: module1.id,
           title: 'Welcome to the Platform',
+          slug: 'welcome-to-platform',
+          img_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=60',
           order_index: 0
         })
         .select()
@@ -1104,9 +1254,11 @@ async function startServer() {
       if (welcomeError) throw welcomeError;
 
       await supabaseAdmin.from('activities').insert({
-        lesson_id: welcomeLesson.id,
-        activity_type: 'text',
-        content: { text: '<h1>Welcome!</h1><p>We are excited to have you here. This course will teach you how to use our gamification features.</p>' },
+        parent_id: welcomeLesson.id,
+        parent_type: 'lesson',
+        type_id: typeMap['html'],
+        title: 'Welcome Letter',
+        data: { html: '<h1>Welcome!</h1><p>We are excited to have you here. This course will teach you how to use our gamification features.</p>' },
         order_index: 0
       });
 
@@ -1126,21 +1278,27 @@ async function startServer() {
       // 5. Create Blocks for Lesson 1.1
       await supabaseAdmin.from('activities').insert([
         {
-          lesson_id: lesson1.id,
-          activity_type: 'video',
-          content: { video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+          parent_id: lesson1.id,
+          parent_type: 'lesson',
+          type_id: typeMap['video'],
+          title: 'Introduction Video',
+          data: { video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
           order_index: 0
         },
         {
-          lesson_id: lesson1.id,
-          activity_type: 'text',
-          content: { text: 'XP (Experience Points) are the backbone of any gamified system. They provide immediate feedback for effort.' },
+          parent_id: lesson1.id,
+          parent_type: 'lesson',
+          type_id: typeMap['html'],
+          title: 'What is XP?',
+          data: { html: 'XP (Experience Points) are the backbone of any gamified system. They provide immediate feedback for effort.' },
           order_index: 1
         },
         {
-          lesson_id: lesson1.id,
-          activity_type: 'quiz',
-          content: {
+          parent_id: lesson1.id,
+          parent_type: 'lesson',
+          type_id: typeMap['quiz'],
+          title: 'XP Quiz',
+          data: {
             questions: [
               {
                 question: 'What does XP stand for?',
@@ -1182,15 +1340,19 @@ async function startServer() {
       // 8. Create Blocks for Lesson 2.1
       await supabaseAdmin.from('activities').insert([
         {
-          lesson_id: lesson2.id,
-          activity_type: 'text',
-          content: { text: 'Badges are visual representations of achievements. They can be used to signal mastery or participation.' },
+          parent_id: lesson2.id,
+          parent_type: 'lesson',
+          type_id: typeMap['html'],
+          title: 'About Badges',
+          data: { html: 'Badges are visual representations of achievements. They can be used to signal mastery or participation.' },
           order_index: 0
         },
         {
-          lesson_id: lesson2.id,
-          activity_type: 'quiz',
-          content: {
+          parent_id: lesson2.id,
+          parent_type: 'lesson',
+          type_id: typeMap['quiz'],
+          title: 'Mechanics Knowledge Check',
+          data: {
             questions: [
               {
                 question: 'Which of these is a common gamification element?',
@@ -1231,15 +1393,19 @@ async function startServer() {
 
       await supabaseAdmin.from('activities').insert([
         {
-          lesson_id: lesson3.id,
-          activity_type: 'text',
-          content: { text: '<h1>Final Quiz</h1><p>Prove your mastery of gamification concepts.</p>' },
+          parent_id: lesson3.id,
+          parent_type: 'lesson',
+          type_id: typeMap['html'],
+          title: 'Preparation',
+          data: { html: '<h1>Final Quiz</h1><p>Prove your mastery of gamification concepts.</p>' },
           order_index: 0
         },
         {
-          lesson_id: lesson3.id,
-          activity_type: 'quiz',
-          content: {
+          parent_id: lesson3.id,
+          parent_type: 'lesson',
+          type_id: typeMap['quiz'],
+          title: 'Final Exam',
+          data: {
             questions: [
               {
                 question: 'What is the primary goal of gamification?',
@@ -1719,6 +1885,159 @@ async function startServer() {
       res.json({ success: true, preferences: data });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -- Sub Courses --
+  app.post("/api/sub-courses", authenticateUser, async (req, res) => {
+    const { title, courseId, tenantId, orderIndex, slug, img_url, metadata } = req.body;
+    if (!title || !courseId || !tenantId) return res.status(400).json({ error: "Missing required fields" });
+
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('sub_courses')
+        .insert({
+          title,
+          course_id: courseId,
+          order_index: orderIndex || 0,
+          slug: slug || title.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-'),
+          img_url,
+          metadata: metadata || {}
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, subCourse: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/sub-courses/:id", authenticateUser, async (req, res) => {
+    const { id } = req.params;
+    const { title, orderIndex, slug, img_url, metadata } = req.body;
+
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('sub_courses')
+        .update({
+          title,
+          order_index: orderIndex,
+          slug,
+          img_url,
+          metadata
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, subCourse: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/courses-full/:slug", authenticateUser, async (req, res) => {
+    const { slug } = req.params;
+    
+    try {
+      // Get course by slug or ID
+      const { data: course, error: courseError } = await supabaseAdmin
+        .from('courses')
+        .select('*')
+        .or(`slug.eq.${slug},id.eq.${slug}`)
+        .single();
+
+      if (courseError || !course) return res.status(404).json({ error: "Course not found" });
+
+      // Fetch permissions for this course
+      const { data: permissions } = await supabaseAdmin
+        .from('course_permissions')
+        .select('*')
+        .eq('course_id', course.id);
+
+      // Get subcourses, modules, and lessons
+      const { data: subCourses } = await supabaseAdmin
+        .from('sub_courses')
+        .select('*, modules(*, lessons(*))')
+        .eq('course_id', course.id)
+        .order('order_index', { ascending: true });
+
+      // Sort lessons within modules
+      const subCoursesWithSortedLessons = subCourses?.map(sc => ({
+        ...sc,
+        modules: sc.modules.map((m: any) => ({
+          ...m,
+          lessons: m.lessons.sort((a: any, b: any) => a.order_index - b.order_index)
+        }))
+      })) || [];
+
+      // Also get modules that don't have a sub_course_id
+      const { data: directModules } = await supabaseAdmin
+        .from('modules')
+        .select('*, lessons(*)')
+        .eq('course_id', course.id)
+        .is('sub_course_id', null)
+        .order('order_index', { ascending: true });
+
+      const directModulesWithSortedLessons = directModules?.map(m => ({
+        ...m,
+        lessons: m.lessons.sort((a: any, b: any) => a.order_index - b.order_index)
+      })) || [];
+
+      res.json({ 
+        success: true, 
+        course, 
+        permissions: permissions || [],
+        subCourses: subCoursesWithSortedLessons,
+        directModules: directModulesWithSortedLessons
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // -- Course Permissions --
+  app.post("/api/courses/:id/permissions", authenticateUser, async (req: any, res: any) => {
+    const { id: courseId } = req.params;
+    const { role, activityType, canView, canCreate, canUpdate, canDelete, tenantId } = req.body;
+    const userId = req.user.id;
+
+    try {
+      // Verify admin role
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!membership || !['super_admin', 'school_admin'].includes(membership.role)) {
+        return res.status(403).json({ error: 'Unauthorized: Only admins can manage permissions' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('course_permissions')
+        .upsert({
+          course_id: courseId,
+          role,
+          activity_type: activityType,
+          can_view: canView,
+          can_create: canCreate,
+          can_update: canUpdate,
+          can_delete: canDelete
+        }, {
+          onConflict: 'course_id,role,activity_type'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, permission: data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

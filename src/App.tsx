@@ -1,3 +1,4 @@
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthPage } from './pages/AuthPage';
 import { Dashboard } from './pages/Dashboard';
@@ -8,9 +9,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
-function AppContent() {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
-  const path = window.location.pathname;
   const [onboardingComplete, setOnboardingComplete] = useState(false);
 
   if (loading) {
@@ -21,13 +21,8 @@ function AppContent() {
     );
   }
 
-  // Handle Accept Invite route separately
-  if (path === '/accept-invite') {
-    return <AcceptInvite />;
-  }
-
   if (!user) {
-    return <AuthPage />;
+    return <Navigate to="/auth" replace />;
   }
 
   // Check if student needs onboarding
@@ -42,20 +37,35 @@ function AppContent() {
     );
   }
 
+  return <>{children}</>;
+}
+
+function AppContent() {
   return (
-    <ErrorBoundary>
-      <Dashboard />
-      <GamificationOverlay />
-    </ErrorBoundary>
+    <Routes>
+      <Route path="/auth" element={<AuthPage />} />
+      <Route path="/accept-invite" element={<AcceptInvite />} />
+      <Route 
+        path="/*" 
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } 
+      />
+    </Routes>
   );
 }
 
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <AppContent />
+          <GamificationOverlay />
+        </AuthProvider>
+      </BrowserRouter>
     </ErrorBoundary>
   );
 }

@@ -20,9 +20,11 @@ import {
   CreditCard,
   CheckCircle,
   Share2,
-  Shield
+  Shield,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
 import { CourseList } from '../components/CourseList';
 import { MemberList } from '../components/MemberList';
 import { ProgressTracker } from '../components/ProgressTracker';
@@ -45,11 +47,36 @@ import { PublicActivityFeed } from '../components/PublicActivityFeed';
 import { formatRelativeTime } from '../lib/utils';
 import { IntegrationManager } from '../components/IntegrationManager';
 import { SocialHub } from '../components/SocialHub';
+import { LearningContentDemo } from '../components/LearningContentDemo';
 
 
 export const Dashboard: React.FC = () => {
   const { profile, activeTenant, memberships, setActiveTenant, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'courses' | 'my-courses' | 'members' | 'progress' | 'children' | 'schools' | 'settings' | 'leaderboard' | 'user-management' | 'bulk-import' | 'subscriptions' | 'integrations' | 'system-users' | 'social'>('dashboard');
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Determine active tab from URL
+  const getActiveTab = () => {
+    const path = location.pathname;
+    if (path.startsWith('/courses')) return 'courses';
+    if (path.startsWith('/my-courses')) return 'my-courses';
+    if (path.startsWith('/members')) return 'members';
+    if (path.startsWith('/progress')) return 'progress';
+    if (path.startsWith('/children')) return 'children';
+    if (path.startsWith('/schools')) return 'schools';
+    if (path.startsWith('/settings')) return 'settings';
+    if (path.startsWith('/leaderboard')) return 'leaderboard';
+    if (path.startsWith('/user-management')) return 'user-management';
+    if (path.startsWith('/bulk-import')) return 'bulk-import';
+    if (path.startsWith('/subscriptions')) return 'subscriptions';
+    if (path.startsWith('/integrations')) return 'integrations';
+    if (path.startsWith('/system-users')) return 'system-users';
+    if (path.startsWith('/social')) return 'social';
+    if (path.startsWith('/demo')) return 'demo';
+    return 'dashboard';
+  };
+
+  const activeTab = getActiveTab();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
@@ -152,8 +179,8 @@ export const Dashboard: React.FC = () => {
     }
   }, [activeTenant, activeTab, profile]);
 
-  const handleTabChange = (tab: any) => {
-    setActiveTab(tab);
+  const handleTabChange = (tab: string) => {
+    navigate(`/${tab === 'dashboard' ? '' : tab}`);
     setIsMobileMenuOpen(false);
   };
 
@@ -204,6 +231,12 @@ export const Dashboard: React.FC = () => {
             label="Dashboard" 
             active={activeTab === 'dashboard'} 
             onClick={() => handleTabChange('dashboard')}
+          />
+          <SidebarItem 
+            icon={Info} 
+            label="Render Demo" 
+            active={activeTab === 'demo'} 
+            onClick={() => handleTabChange('demo')}
           />
           <SidebarItem 
             icon={Share2} 
@@ -452,7 +485,7 @@ export const Dashboard: React.FC = () => {
                 </p>
                 {isSuperAdmin && (
                   <button 
-                    onClick={() => setActiveTab('schools')}
+                    onClick={() => handleTabChange('schools')}
                     className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
                   >
                     View Invitation Link
@@ -462,140 +495,133 @@ export const Dashboard: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'dashboard' && activeRole === 'parent' && (
-            <ParentDashboard />
-          )}
-
-          {activeTab === 'dashboard' && activeRole !== 'parent' && (
-            <>
-              {activeRole === 'student' && <GamificationWidget />}
-              {/* Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {stats.map((stat, i) => (
-                  <motion.div
-                    key={stat.label}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <div className={stat.color + " p-3 rounded-xl text-white shadow-lg shadow-blue-100"}>
-                        <stat.icon className="w-6 h-6" />
-                      </div>
-                    </div>
-                    <div className="text-3xl font-bold text-slate-900">{stat.value}</div>
-                    <div className="text-slate-500 font-medium">{stat.label}</div>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Permissions Debugger */}
-              <PermissionsDebugger />
-
-              {/* Recent Activity / Courses */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className={activeRole === 'student' ? "lg:col-span-2 space-y-8" : "lg:col-span-3 space-y-8"}>
-                  <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                      <h3 className="font-bold text-slate-900">Recent Courses</h3>
-                      <button onClick={() => setActiveTab('courses')} className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {isLoadingStats ? (
-                        <div className="p-8 flex justify-center">
-                          <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
-                        </div>
-                      ) : recentCourses.length > 0 ? (
-                        recentCourses.map((course) => (
-                          <div key={course.id} className="p-4 hover:bg-slate-50 transition-all flex items-center justify-between group cursor-pointer">
-                            <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
-                                <BookOpen className="w-6 h-6 text-slate-400" />
-                              </div>
-                              <div>
-                                <h4 className="font-semibold text-slate-900">{course.title}</h4>
-                                <p className="text-sm text-slate-500 line-clamp-1">{course.description || 'No description provided'}</p>
-                              </div>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-all" />
+          <Routes>
+            <Route path="/" element={
+              activeRole === 'parent' ? <ParentDashboard /> : (
+                <>
+                  {activeRole === 'student' && <GamificationWidget />}
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {stats.map((stat, i) => (
+                      <motion.div
+                        key={stat.label}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.1 }}
+                        className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className={stat.color + " p-3 rounded-xl text-white shadow-lg shadow-blue-100"}>
+                            <stat.icon className="w-6 h-6" />
                           </div>
-                        ))
-                      ) : (
-                        <div className="p-8 text-center text-slate-500">
-                          No courses found for this school.
                         </div>
-                      )}
-                    </div>
-                  </section>
-
-                  <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                      <h3 className="font-bold text-slate-900">Latest News & Announcements</h3>
-                      <button onClick={() => setActiveTab('social')} className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
-                    </div>
-                    <div className="p-6 space-y-4">
-                      {recentNews.length > 0 ? recentNews.map((item) => (
-                        <div 
-                          key={item.id} 
-                          onClick={() => setActiveTab('social')}
-                          className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100/50 cursor-pointer hover:bg-indigo-50 hover:border-indigo-300 transition-all group"
-                        >
-                          <h4 className="font-bold text-indigo-900 flex items-center justify-between">
-                            Announcement
-                            <ChevronRight className="w-4 h-4 text-indigo-300 group-hover:text-indigo-600 transition-colors" />
-                          </h4>
-                          <p className="text-sm text-indigo-700 mt-1 whitespace-pre-wrap line-clamp-2">
-                            {item.content}
-                          </p>
-                          <span className="text-[10px] font-bold text-indigo-400 uppercase mt-2 block">
-                            {formatRelativeTime(item.created_at)}
-                          </span>
-                        </div>
-                      )) : (
-                        <div className="text-center py-4 text-slate-400 text-sm italic">
-                          No recent announcements.
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                </div>
-
-                {activeRole === 'student' && (
-                  <div className="lg:col-span-1 space-y-8">
-                    <GlobalLeaderboard />
-                    <PublicActivityFeed />
+                        <div className="text-3xl font-bold text-slate-900">{stat.value}</div>
+                        <div className="text-slate-500 font-medium">{stat.label}</div>
+                      </motion.div>
+                    ))}
                   </div>
-                )}
-              </div>
-            </>
-          )}
 
-          {activeTab === 'schools' && <SchoolManagement />}
+                  {/* Permissions Debugger */}
+                  <PermissionsDebugger />
 
-          {activeTab === 'courses' && <CourseList />}
-          
-          {activeTab === 'my-courses' && <CourseList onlyEnrolled />}
-          
-          {activeTab === 'members' && <MemberList />}
+                  {/* Recent Activity / Courses */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className={activeRole === 'student' ? "lg:col-span-2 space-y-8" : "lg:col-span-3 space-y-8"}>
+                      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                          <h3 className="font-bold text-slate-900">Recent Courses</h3>
+                          <button onClick={() => handleTabChange('courses')} className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
+                        </div>
+                        <div className="divide-y divide-slate-100">
+                          {isLoadingStats ? (
+                            <div className="p-8 flex justify-center">
+                              <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
+                            </div>
+                          ) : recentCourses.length > 0 ? (
+                            recentCourses.map((course) => (
+                              <div 
+                                key={course.id} 
+                                onClick={() => navigate(`/courses/${course.slug || course.id}`)}
+                                className="p-4 hover:bg-slate-50 transition-all flex items-center justify-between group cursor-pointer"
+                              >
+                                <div className="flex items-center gap-4">
+                                  <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center">
+                                    <BookOpen className="w-6 h-6 text-slate-400" />
+                                  </div>
+                                  <div>
+                                    <h4 className="font-semibold text-slate-900">{course.title}</h4>
+                                    <p className="text-sm text-slate-500 line-clamp-1">{course.description || 'No description provided'}</p>
+                                  </div>
+                                </div>
+                                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-all" />
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-8 text-center text-slate-500">
+                              No courses found for this school.
+                            </div>
+                          )}
+                        </div>
+                      </section>
 
-          {activeTab === 'user-management' && <UserManagement />}
+                      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                          <h3 className="font-bold text-slate-900">Latest News & Announcements</h3>
+                          <button onClick={() => handleTabChange('social')} className="text-indigo-600 text-sm font-semibold hover:underline">View All</button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                          {recentNews.length > 0 ? recentNews.map((item) => (
+                            <div 
+                              key={item.id} 
+                              onClick={() => handleTabChange('social')}
+                              className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100/50 cursor-pointer hover:bg-indigo-50 hover:border-indigo-300 transition-all group"
+                            >
+                              <h4 className="font-bold text-indigo-900 flex items-center justify-between">
+                                Announcement
+                                <ChevronRight className="w-4 h-4 text-indigo-300 group-hover:text-indigo-600 transition-colors" />
+                              </h4>
+                              <p className="text-sm text-indigo-700 mt-1 whitespace-pre-wrap line-clamp-2">
+                                {item.content}
+                              </p>
+                              <span className="text-[10px] font-bold text-indigo-400 uppercase mt-2 block">
+                                {formatRelativeTime(item.created_at)}
+                              </span>
+                            </div>
+                          )) : (
+                            <div className="text-center py-4 text-slate-400 text-sm italic">
+                              No recent announcements.
+                            </div>
+                          )}
+                        </div>
+                      </section>
+                    </div>
 
-          {activeTab === 'progress' && <ProgressTracker />}
+                    {activeRole === 'student' && (
+                      <div className="lg:col-span-1 space-y-8">
+                        <GlobalLeaderboard />
+                        <PublicActivityFeed />
+                      </div>
+                    )}
+                  </div>
+                </>
+              )
+            } />
 
-          {activeTab === 'children' && <ManagedUsers />}
-
-          {activeTab === 'subscriptions' && <SubscriptionManagement />}
-
-          {activeTab === 'leaderboard' && <GlobalLeaderboard />}
-
-          {activeTab === 'integrations' && <IntegrationManager />}
-
-          {activeTab === 'system-users' && <GlobalUserManagement />}
-
-          {activeTab === 'social' && <SocialHub />}
-
-          {activeTab === 'settings' && <Settings />}
+            <Route path="/schools" element={<SchoolManagement />} />
+            <Route path="/courses/*" element={<CourseList />} />
+            <Route path="/my-courses/*" element={<CourseList onlyEnrolled />} />
+            <Route path="/members" element={<MemberList />} />
+            <Route path="/user-management" element={<UserManagement />} />
+            <Route path="/progress" element={<ProgressTracker />} />
+            <Route path="/children" element={<ManagedUsers />} />
+            <Route path="/subscriptions" element={<SubscriptionManagement />} />
+            <Route path="/leaderboard" element={<GlobalLeaderboard />} />
+            <Route path="/integrations" element={<IntegrationManager />} />
+            <Route path="/system-users" element={<GlobalUserManagement />} />
+            <Route path="/social" element={<SocialHub />} />
+            <Route path="/demo" element={<LearningContentDemo />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
         </div>
       </main>
     </div>
