@@ -1690,9 +1690,16 @@ async function startServer() {
 
       const { data, error } = await query.limit(50);
 
-      if (error) throw error;
+      if (error) {
+        // If the table doesn't exist, just return an empty array for now.
+        if (error.code === 'PGRST205') {
+          return res.json({ success: true, statements: [] });
+        }
+        throw error;
+      }
       res.json({ success: true, statements: data });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -2047,6 +2054,264 @@ async function startServer() {
       res.json({ success: true, permission: data });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Link Parent to Student (For Parent Dashboard)
+  app.post('/api/link-student', authenticateUser, async (req: any, res: any) => {
+    try {
+      const { studentUsername, tenantId } = req.body;
+      const parentId = req.user.id;
+
+      if (!studentUsername || !tenantId) {
+         return res.status(400).json({ error: 'Missing required parameters.' });
+      }
+
+      // 1. Find the student by username or custom_id
+      const { data: student, error: studentError } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, username')
+        .or(`username.eq."${studentUsername}",custom_id.eq."${studentUsername}"`)
+        .single();
+        
+      if (studentError || !student) {
+        return res.status(404).json({ error: 'Student not found.' });
+      }
+
+      // 1.5. Find parent details
+      const { data: parent } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, username')
+        .eq('id', parentId)
+        .single();
+
+      // 2. Check if already linked
+      const { data: existing } = await supabaseAdmin
+        .from('parent_student')
+        .select('id')
+        .eq('parent_id', parentId)
+        .eq('student_id', student.id)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+        
+      if (existing) {
+        return res.status(400).json({ error: 'This student is already linked to your account.' });
+      }
+
+      // 3. Create Link
+      const { error: insertError } = await supabaseAdmin
+        .from('parent_student')
+        .insert({
+          parent_id: parentId,
+          student_id: student.id,
+          tenant_id: tenantId
+        });
+
+      if (insertError) throw insertError;
+      
+      // 4. Update student profile parent_id
+      await supabaseAdmin.from('profiles').update({ parent_id: parentId }).eq('id', student.id);
+
+      // 5. Send Notification to Student
+      const parentName = parent?.full_name || parent?.username || 'A parent';
+      await supabaseAdmin.from('notifications').insert({
+        tenant_id: tenantId,
+        user_id: student.id,
+        title: 'Parent Linked',
+        message: `${parentName} has been linked to your account as a parent.`,
+        type: 'info'
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Student links to Parent (For Student Settings)
+  app.post('/api/link-parent', authenticateUser, async (req: any, res: any) => {
+    try {
+      const { parentId, tenantId } = req.body;
+      const studentId = req.user.id;
+
+      if (!parentId || !tenantId) {
+         return res.status(400).json({ error: 'Missing required parameters.' });
+      }
+
+      // 1. Check if parent exists
+      const { data: parent, error: parentError } = await supabaseAdmin
+        .from('profiles')
+        .select('id, custom_id, username, full_name')
+        .or(`id.eq."${parentId}",username.eq."${parentId}",custom_id.eq."${parentId}"`)
+        .single();
+        
+      if (parentError || !parent) {
+        return res.status(404).json({ error: 'Parent not found.' });
+      }
+
+      // 1.5. Find student details
+      const { data: student } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, username')
+        .eq('id', studentId)
+        .single();
+
+      // 2. Check link
+      const { data: existing } = await supabaseAdmin
+        .from('parent_student')
+        .select('id')
+        .eq('parent_id', parent.id)
+        .eq('student_id', studentId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+
+      if (!existing) {
+        // 3. Insert into parent_student
+        const { error: insertError } = await supabaseAdmin
+          .from('parent_student')
+          .insert({
+            parent_id: parent.id,
+            student_id: studentId,
+            tenant_id: tenantId
+          });
+
+        if (insertError) throw insertError;
+        
+        // Send Notification to Parent
+        const studentName = student?.full_name || student?.username || 'A student';
+        await supabaseAdmin.from('notifications').insert({
+          tenant_id: tenantId,
+          user_id: parent.id,
+          title: 'Student Linked',
+          message: `${studentName} has linked to your account as their parent.`,
+          type: 'info'
+        });
+      }
+      
+      // 4. update profile parent_id
+      await supabaseAdmin.from('profiles').update({ parent_id: parent.id }).eq('id', studentId);
+
+      res.json({ success: true, parent_id: parent.id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Generic Dynamic Search/List APIs ---
+  // List Users with Filter
+  app.get('/api/search/users', authenticateUser, async (req: any, res: any) => {
+    try {
+      const { search, role, tenantId, page = 1, limit = 20 } = req.query;
+
+      // 1. Get user IDs from memberships if tenantId or role is provided
+      let validUserIds: string[] | null = null;
+      
+      if (tenantId || role) {
+        let memQuery = supabaseAdmin.from('memberships').select('user_id');
+        if (tenantId) memQuery = memQuery.eq('tenant_id', tenantId);
+        if (role) memQuery = memQuery.eq('role', role);
+        
+        const { data: mems, error: memError } = await memQuery;
+        if (memError) throw memError;
+        
+        validUserIds = mems ? mems.map((m: any) => m.user_id) : [];
+        
+        if (validUserIds.length === 0) {
+           return res.json({ success: true, data: [], count: 0 });
+        }
+      }
+
+      // 2. Query profiles
+      let query = supabaseAdmin.from('profiles').select(`
+        id,
+        full_name,
+        username
+      `, { count: 'exact' });
+
+      if (validUserIds) {
+        query = query.in('id', validUserIds);
+      }
+      
+      if (search) {
+        query = query.or(`full_name.ilike.%${search}%,username.ilike.%${search}%`);
+      }
+
+      const from = (Number(page) - 1) * Number(limit);
+      const to = from + Number(limit) - 1;
+      query = query.range(from, to);
+
+      const { data, count, error } = await query;
+      if (error) throw error;
+
+      res.json({ success: true, data: data || [], count });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // List Courses with Filter
+  app.get('/api/search/courses', authenticateUser, async (req: any, res: any) => {
+    try {
+      const { search, tenantId, status, isPublished, page = 1, limit = 20 } = req.query;
+      let query = supabaseAdmin.from('courses').select('*', { count: 'exact' });
+
+      if (tenantId) query = query.eq('tenant_id', tenantId);
+      if (status) query = query.eq('status', status);
+      if (isPublished !== undefined) query = query.eq('is_published', isPublished === 'true');
+      if (search) {
+        query = query.ilike('title', `%${search}%`);
+      }
+
+      const from = (Number(page) - 1) * Number(limit);
+      const to = from + Number(limit) - 1;
+      query = query.range(from, to).order('created_at', { ascending: false });
+
+      const { data, count, error } = await query;
+      if (error) throw error;
+
+      res.json({ success: true, data, count });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // List Activities / Activity Types
+  app.get('/api/search/activities', authenticateUser, async (req: any, res: any) => {
+    try {
+      const { search, typeName, page = 1, limit = 20 } = req.query;
+      let query = supabaseAdmin.from('activities').select(`
+        id,
+        title,
+        parent_type,
+        parent_id,
+        is_published,
+        activity_types!inner (name, capabilities)
+      `, { count: 'exact' });
+
+      if (typeName) query = query.eq('activity_types.name', typeName);
+      if (search) query = query.ilike('title', `%${search}%`);
+
+      const from = (Number(page) - 1) * Number(limit);
+      const to = from + Number(limit) - 1;
+      query = query.range(from, to).order('created_at', { ascending: false });
+
+      const { data, count, error } = await query;
+      if (error) throw error;
+
+      res.json({ success: true, data, count });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  
+  // Get all available activity types for dynamic dropdowns
+  app.get('/api/search/activity-types', authenticateUser, async (req: any, res: any) => {
+    try {
+      const { data, error } = await supabaseAdmin.from('activity_types').select('*').order('name');
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Users, UserPlus, Search, Loader2, ChevronRight, GraduationCap, BookOpen, CheckCircle, Plus, Edit2, Phone, MapPin, User, XCircle } from 'lucide-react';
+import { ChevronDown, Users, UserPlus, Search, Loader2, ChevronRight, GraduationCap, BookOpen, CheckCircle, Plus, Edit2, Phone, MapPin, User, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { DynamicDropdown } from './DynamicDropdown';
 
 interface Student {
   id: string;
@@ -220,40 +221,26 @@ export const ParentDashboard: React.FC = () => {
     setError(null);
 
     try {
-      // 1. Find student by username or custom_id
-      const { data: p, error: profileError } = await supabase
-        .from('profiles')
-        .select('id')
-        .or(`username.eq."${studentUsername}",custom_id.eq."${studentUsername}"`)
-        .single();
+      // 1. Link student via API
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No session to authenticate');
 
-      if (profileError || !p) {
-        throw new Error('Student not found. Please check the ID.');
+      const response = await fetch('/api/link-student', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          studentUsername,
+          tenantId: activeTenant.id
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to link account');
       }
-
-      // 2. Check if already linked
-      const { data: existing, error: existingError } = await supabase
-        .from('parent_student')
-        .select('id')
-        .eq('parent_id', user.id)
-        .eq('student_id', p.id)
-        .eq('tenant_id', activeTenant.id)
-        .maybeSingle();
-
-      if (existing) {
-        throw new Error('This student is already linked to your account.');
-      }
-
-      // 3. Create link
-      const { error: linkError } = await supabase
-        .from('parent_student')
-        .insert({
-          parent_id: user.id,
-          student_id: p.id,
-          tenant_id: activeTenant.id
-        });
-
-      if (linkError) throw linkError;
 
       setIsLinkModalOpen(false);
       setStudentUsername('');
@@ -638,20 +625,17 @@ export const ParentDashboard: React.FC = () => {
 
               <form onSubmit={handleLinkStudent} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Student ID / Username</label>
-                  <div className="relative">
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                      type="text"
-                      required
-                      value={studentUsername}
-                      onChange={(e) => setStudentUsername(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all"
-                      placeholder="e.g. student123"
-                    />
-                  </div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Search or Enter Student ID</label>
+                  <DynamicDropdown 
+                    type="users" 
+                    filterParams={{ tenantId: activeTenant?.id, role: 'student' }} 
+                    value={studentUsername} 
+                    valueKey="username"
+                    onChange={(val) => setStudentUsername(val)} 
+                    placeholder="Search for a student by ID or Name..." 
+                  />
                   <p className="text-[10px] text-slate-400 mt-2 font-medium">
-                    Ask your child for their Student ID or username used to log in.
+                    Ask your child for their Student ID or username used to log in, or search for their name using the dropdown above.
                   </p>
                 </div>
 

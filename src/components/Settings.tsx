@@ -4,9 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { User, Lock, MapPin, Phone, Building, Loader2, Save, Users, GraduationCap, ChevronDown, Zap, Target, CheckCircle, Bell } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
+import { DynamicDropdown } from './DynamicDropdown';
 
 export const Settings: React.FC = () => {
-  const { user, profile, refreshData } = useAuth();
+  const { user, profile, refreshData, activeTenant } = useAuth();
   const [loading, setLoading] = useState(false);
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
@@ -142,9 +143,6 @@ export const Settings: React.FC = () => {
     customId: ''
   });
 
-  const [parents, setParents] = useState<any[]>([]);
-  const [loadingParents, setLoadingParents] = useState(false);
-
   // Password Form State
   const [passwords, setPasswords] = useState({
     newPassword: '',
@@ -168,52 +166,6 @@ export const Settings: React.FC = () => {
     }
   }, [profile]);
 
-  useEffect(() => {
-    const fetchParents = async () => {
-      if (profile?.role !== 'student') return;
-      
-      setLoadingParents(true);
-      try {
-        // Get current tenant ID
-        const { data: membership } = await supabase
-          .from('memberships')
-          .select('tenant_id')
-          .eq('user_id', user?.id)
-          .single();
-
-        if (membership) {
-          const { data: parentMemberships } = await supabase
-            .from('memberships')
-            .select(`
-              user_id,
-              profiles:user_id (
-                full_name,
-                custom_id
-              )
-            `)
-            .eq('tenant_id', membership.tenant_id)
-            .eq('role', 'parent');
-
-          if (parentMemberships) {
-            setParents(parentMemberships.map((m: any) => ({
-              id: m.user_id,
-              name: m.profiles.full_name,
-              customId: m.profiles.custom_id
-            })));
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching parents:', err);
-      } finally {
-        setLoadingParents(false);
-      }
-    };
-
-    if (user && profile?.role === 'student') {
-      fetchParents();
-    }
-  }, [user, profile]);
-
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -233,17 +185,36 @@ export const Settings: React.FC = () => {
           school_name: formData.schoolName,
         };
 
-        // Only include parent_id if it's a valid UUID string, otherwise null
-        if (profile?.role === 'student') {
-          updateData.parent_id = formData.parentId.trim() || null;
-        }
-
         const { error: updateError } = await supabase
           .from('profiles')
           .update(updateData)
           .eq('id', user.id);
 
         if (updateError) throw updateError;
+
+        // If parentId is provided and they are a student, call link-parent API
+        if (profile?.role === 'student' && formData.parentId.trim() && activeTenant) {
+          const { data: { session } } = await supabase.auth.getSession();
+          const response = await fetch('/api/link-parent', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: JSON.stringify({
+              parentId: formData.parentId.trim(),
+              tenantId: activeTenant.id
+            })
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+             throw new Error(data.error || 'Failed to link with parent');
+          }
+        } else if (profile?.role === 'student' && !formData.parentId.trim()) {
+           // Clear parent_id if empty
+           await supabase.from('profiles').update({ parent_id: null }).eq('id', user.id);
+        }
 
       setSuccess('Profile updated successfully!');
       await refreshData();
@@ -405,28 +376,14 @@ export const Settings: React.FC = () => {
 
               {profile?.role === 'student' && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Select Parent</label>
-                  <div className="relative">
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <select
-                      value={formData.parentId}
-                      onChange={(e) => setFormData({...formData, parentId: e.target.value})}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all appearance-none"
-                    >
-                      <option value="">No Parent Linked</option>
-                      {parents.map(parent => (
-                        <option key={parent.id} value={parent.id}>
-                          {parent.name} ({parent.customId})
-                        </option>
-                      ))}
-                    </select>
-                    {loadingParents && (
-                      <div className="absolute right-10 top-1/2 -translate-y-1/2">
-                        <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
-                      </div>
-                    )}
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Link with Parent</label>
+                  <DynamicDropdown 
+                    type="users" 
+                    filterParams={{ tenantId: activeTenant?.id, role: 'parent' }} 
+                    value={formData.parentId} 
+                    onChange={(val) => setFormData({...formData, parentId: val})} 
+                    placeholder="Search for a parent..." 
+                  />
                 </div>
               )}
 
