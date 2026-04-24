@@ -997,7 +997,7 @@ async function startServer() {
 
   // Create Course Action
   app.post('/api/courses', authenticateUser, async (req: any, res: any) => {
-    const { title, description, img_url, slug, tenantId, prerequisites = [] } = req.body;
+    const { title, description, img_url, slug, tenantId, prerequisites = [], grade, subject } = req.body;
     const userId = req.user.id;
 
     try {
@@ -1022,7 +1022,9 @@ async function startServer() {
           img_url,
           slug,
           tenant_id: tenantId,
-          prerequisites
+          prerequisites,
+          grade,
+          subject
         })
         .select()
         .single();
@@ -1060,7 +1062,7 @@ async function startServer() {
   app.put('/api/courses/:id', authenticateUser, async (req: any, res: any) => {
     try {
       const { id } = req.params;
-      const { title, description, img_url, tenantId, prerequisites } = req.body;
+      const { title, description, img_url, tenantId, prerequisites, grade, subject } = req.body;
       const userId = req.user.id;
 
       // Check admin
@@ -1093,7 +1095,9 @@ async function startServer() {
           title,
           description,
           img_url,
-          prerequisites
+          prerequisites,
+          grade,
+          subject
         })
         .eq('id', id)
         .select()

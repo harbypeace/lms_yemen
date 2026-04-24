@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { geminiService, GeneratedCourse } from '../services/geminiService';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { GRADES, SUBJECTS } from '../constants';
 
 interface AICourseGeneratorProps {
   onSuccess: () => void;
@@ -13,6 +14,8 @@ interface AICourseGeneratorProps {
 export const AICourseGenerator: React.FC<AICourseGeneratorProps> = ({ onSuccess, onClose }) => {
   const { activeTenant } = useAuth();
   const [topic, setTopic] = useState('');
+  const [selectedGrade, setSelectedGrade] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
@@ -28,7 +31,7 @@ export const AICourseGenerator: React.FC<AICourseGeneratorProps> = ({ onSuccess,
 
     try {
       // 1. Generate Structure
-      const courseStructure = await geminiService.generateCourseStructure(topic);
+      const courseStructure = await geminiService.generateCourseStructure(topic, selectedGrade, selectedSubject);
       setProgress(20);
       setStatus(`Creating course: ${courseStructure.title}`);
 
@@ -47,7 +50,9 @@ export const AICourseGenerator: React.FC<AICourseGeneratorProps> = ({ onSuccess,
           title: courseStructure.title,
           description: courseStructure.description,
           slug: slug,
-          tenantId: activeTenant.id
+          tenantId: activeTenant.id,
+          grade: selectedGrade || undefined,
+          subject: selectedSubject || undefined
         })
       });
 
@@ -152,7 +157,7 @@ export const AICourseGenerator: React.FC<AICourseGeneratorProps> = ({ onSuccess,
       {!isGenerating ? (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">Topic or Subject</label>
+            <label className="block text-sm font-bold text-slate-700 mb-2">Topic</label>
             <input
               type="text"
               value={topic}
@@ -160,6 +165,30 @@ export const AICourseGenerator: React.FC<AICourseGeneratorProps> = ({ onSuccess,
               placeholder="e.g. Introduction to Astronomy, Python for Beginners..."
               className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Grade</label>
+              <select
+                value={selectedGrade}
+                onChange={(e) => setSelectedGrade(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+              >
+                <option value="">Any Grade</option>
+                {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Subject</label>
+              <select
+                value={selectedSubject}
+                onChange={(e) => setSelectedSubject(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+              >
+                <option value="">Any Subject</option>
+                {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
           <button
             onClick={generateCourse}

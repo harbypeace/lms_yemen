@@ -21,7 +21,8 @@ import {
   CheckCircle,
   Share2,
   Shield,
-  Info
+  Info,
+  Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
@@ -82,6 +83,10 @@ export const Dashboard: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const activeRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
+
+  // Immersive mode for courses
+  const pathParts = location.pathname.split('/').filter(Boolean);
+  const isLearningMode = (activeTab === 'courses' || activeTab === 'my-courses') && pathParts.length > 1;
 
   const [dashboardStats, setDashboardStats] = useState({ courses: 0, members: 0, progress: 0, enrolledCourses: 0, completedLessons: 0 });
   const [recentCourses, setRecentCourses] = useState<any[]>([]);
@@ -208,10 +213,11 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* Sidebar */}
-      <aside className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
-        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
+      {!isLearningMode && (
+        <aside className={cn(
+          "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
+          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        )}>
         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold">
@@ -267,12 +273,6 @@ export const Dashboard: React.FC = () => {
                 label="My Courses" 
                 active={activeTab === 'my-courses'} 
                 onClick={() => handleTabChange('my-courses')}
-              />
-              <SidebarItem 
-                icon={Trophy} 
-                label="Leaderboard" 
-                active={activeTab === 'leaderboard'} 
-                onClick={() => handleTabChange('leaderboard')}
               />
             </>
           )}
@@ -368,10 +368,12 @@ export const Dashboard: React.FC = () => {
           </button>
         </div>
       </aside>
+    )}
 
-      {/* Main Content */}
+    {/* Main Content */}
       <main className="flex-1 overflow-y-auto w-full">
-        <header className="bg-white border-b border-slate-200 p-4 md:p-6 flex items-center justify-between sticky top-0 z-10">
+        {!isLearningMode && (
+          <header className="bg-white border-b border-slate-200 p-4 md:p-6 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <button 
               className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg"
@@ -479,8 +481,12 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
         </header>
+      )}
 
-        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-8 relative">
+      <div className={cn(
+          "max-w-7xl mx-auto relative",
+          isLearningMode ? "p-0" : "p-4 md:p-8 space-y-6 md:space-y-8"
+        )}>
           {activeTenant?.status === 'pending' && (
             <div className="absolute inset-x-4 md:inset-x-8 top-4 md:top-8 bottom-0 bg-slate-50/80 backdrop-blur-[2px] z-[5] rounded-3xl flex items-center justify-center p-6 text-center">
               <motion.div 
@@ -511,6 +517,33 @@ export const Dashboard: React.FC = () => {
             <Route path="/" element={
               activeRole === 'parent' ? <ParentDashboard /> : (
                 <>
+                  {activeRole === 'student' && (
+                    <section className="bg-indigo-600 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl">
+                      <div className="absolute right-0 top-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+                      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-2">
+                          <h3 className="text-2xl font-black">Continue Learning</h3>
+                          <p className="text-indigo-100 max-w-md">Pick up where you left off and reach your daily learning goal!</p>
+                        </div>
+                        {recentCourses.length > 0 ? (
+                          <button 
+                            onClick={() => navigate(`/courses/${recentCourses[0].slug || recentCourses[0].id}`)}
+                            className="bg-white text-indigo-600 px-8 py-4 rounded-2xl font-bold hover:bg-slate-50 transition-all shadow-xl shadow-indigo-900/20 flex items-center gap-2"
+                          >
+                            <Play className="w-5 h-5 fill-current" />
+                            Resume: {recentCourses[0].title}
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => handleTabChange('courses')}
+                            className="bg-white text-indigo-600 px-8 py-4 rounded-2xl font-bold hover:bg-slate-50 transition-all shadow-xl shadow-indigo-900/20"
+                          >
+                            Browse Courses
+                          </button>
+                        )}
+                      </div>
+                    </section>
+                  )}
                   {activeRole === 'student' && <GamificationWidget />}
                   {/* Stats Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -610,7 +643,6 @@ export const Dashboard: React.FC = () => {
 
                     {activeRole === 'student' && (
                       <div className="lg:col-span-1 space-y-8">
-                        <GlobalLeaderboard />
                         <PublicActivityFeed />
                       </div>
                     )}
@@ -628,7 +660,6 @@ export const Dashboard: React.FC = () => {
             <Route path="/progress" element={<ProgressTracker />} />
             <Route path="/children" element={<ManagedUsers />} />
             <Route path="/subscriptions" element={<SubscriptionManagement />} />
-            <Route path="/leaderboard" element={<GlobalLeaderboard />} />
             <Route path="/integrations" element={<IntegrationManager />} />
             <Route path="/system-users" element={<GlobalUserManagement />} />
             <Route path="/social" element={<SocialHub />} />

@@ -19,8 +19,10 @@ export interface GeneratedCourse {
 }
 
 export const geminiService = {
-  async generateCourseStructure(topic: string): Promise<GeneratedCourse> {
+  async generateCourseStructure(topic: string, grade?: string, subject?: string): Promise<GeneratedCourse> {
     const prompt = `Generate a comprehensive course structure for the topic: "${topic}".
+    ${grade ? `The course should be targeted at ${grade} level.` : ''}
+    ${subject ? `The primary subject is ${subject}.` : ''}
     The course should have 3 modules, each module with 2-3 lessons.
     Each lesson should have 1-2 activities. 
     Activities can be of type 'html' (with content in html field), 'video' (with a YouTube URL in video_url field - use placeholders), or 'quiz' (with questions array).
