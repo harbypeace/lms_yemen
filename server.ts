@@ -1057,6 +1057,55 @@ async function startServer() {
     }
   });
 
+  app.put('/api/courses/:id', authenticateUser, async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const { title, description, img_url, tenantId, prerequisites } = req.body;
+      const userId = req.user.id;
+
+      // Check admin
+      const { data: membership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId)
+        .single();
+        
+      if (!membership || !['super_admin', 'school_admin', 'teacher'].includes(membership.role)) {
+        return res.status(403).json({ error: 'Unauthorized to edit courses in this school' });
+      }
+
+      // Check if course belongs to tenant
+      const { data: course, error: fetchError } = await supabaseAdmin
+        .from('courses')
+        .select('id')
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (fetchError || !course) {
+        return res.status(404).json({ error: 'Course not found or access denied.' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('courses')
+        .update({
+          title,
+          description,
+          img_url,
+          prerequisites
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, course: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Create Module Action
   app.post('/api/modules', authenticateUser, async (req: any, res: any) => {
     const { title, courseId, tenantId, orderIndex, img_url, slug, metadata } = req.body;

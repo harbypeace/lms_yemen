@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -35,8 +35,12 @@ interface CourseViewerProps {
 }
 
 export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
-  const { courseSlug, subCourseSlug, unitSlug, lessonSlug } = useParams();
+  const params = useParams();
+  const courseSlug = params.courseSlug;
   const navigate = useNavigate();
+  const location = useLocation();
+  const basePath = location.pathname.startsWith('/my-courses') ? '/my-courses' : '/courses';
+  
   const { user, progress, setProgress, memberships, activeTenant } = useAuth();
   const { trackLessonStart, trackLessonComplete } = useLMSEvents();
   
@@ -57,7 +61,7 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
   const [activeSubCourseId, setActiveSubCourseId] = useState<string | null>(null);
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<{type: 'subcourse' | 'unit' | 'lesson', data: any} | null>(null);
+  const [editTarget, setEditTarget] = useState<{type: 'course' | 'subcourse' | 'unit' | 'lesson', data: any} | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const unitScrollRef = useRef<HTMLDivElement>(null);
 
@@ -119,9 +123,37 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
   const allModules = [...directModules, ...subCourses.flatMap(sc => sc.modules)];
   const allLessons = allModules.flatMap(m => m.lessons);
 
-  const selectedSubCourse = subCourses.find(sc => sc.slug === subCourseSlug || sc.id === subCourseSlug);
-  const selectedModule = allModules.find(m => m.slug === unitSlug || m.id === unitSlug);
-  const selectedLesson = allLessons.find(l => l.slug === lessonSlug || l.id === lessonSlug);
+  const splat = params["*"] || "";
+  const parts = splat.split('/').filter(Boolean);
+  
+  let matchedSubCourse: any = null;
+  let matchedModule: any = null;
+  let matchedLesson: any = null;
+
+  if (parts.length > 0) {
+    matchedSubCourse = subCourses.find(sc => sc.slug === parts[0] || sc.id === parts[0]);
+    if (matchedSubCourse) {
+      if (parts.length > 1) {
+        matchedModule = matchedSubCourse.modules.find((m: any) => m.slug === parts[1] || m.id === parts[1]);
+      }
+      if (matchedModule && parts.length > 2) {
+        matchedLesson = matchedModule.lessons.find((l: any) => l.slug === parts[2] || l.id === parts[2]);
+      }
+    } else {
+      matchedModule = directModules.find(m => m.slug === parts[0] || m.id === parts[0]);
+      if (matchedModule && parts.length > 1) {
+        matchedLesson = matchedModule.lessons.find((l: any) => l.slug === parts[1] || l.id === parts[1]);
+      }
+    }
+  }
+
+  const selectedSubCourse = matchedSubCourse;
+  const selectedModule = matchedModule;
+  const selectedLesson = matchedLesson;
+
+  const subCourseSlug = selectedSubCourse ? (selectedSubCourse.slug || selectedSubCourse.id) : undefined;
+  const unitSlug = selectedModule ? (selectedModule.slug || selectedModule.id) : undefined;
+  const lessonSlug = selectedLesson ? (selectedLesson.slug || selectedLesson.id) : undefined;
 
   const viewLevel = lessonSlug ? 'lesson' : unitSlug ? 'unit' : subCourseSlug ? 'subcourse' : 'course';
 
@@ -216,7 +248,8 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       let endpoint = '';
-      if (editTarget.type === 'subcourse') endpoint = `/api/sub-courses/${editTarget.data.id}`;
+      if (editTarget.type === 'course') endpoint = `/api/courses/${editTarget.data.id}`;
+      else if (editTarget.type === 'subcourse') endpoint = `/api/sub-courses/${editTarget.data.id}`;
       else if (editTarget.type === 'unit') endpoint = `/api/modules/${editTarget.data.id}`;
       else endpoint = `/api/lessons/${editTarget.data.id}`;
       
@@ -244,13 +277,13 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
     }
   };
 
-  const getSubCoursePath = (sc: any) => `/courses/${courseSlug}/${sc.slug || sc.id}`;
+  const getSubCoursePath = (sc: any) => `${basePath}/${courseSlug}/${sc.slug || sc.id}`;
   const getUnitPath = (sc: any, m: any) => sc 
-    ? `/courses/${courseSlug}/${sc.slug || sc.id}/${m.slug || m.id}`
-    : `/courses/${courseSlug}/${m.slug || m.id}`;
+    ? `${basePath}/${courseSlug}/${sc.slug || sc.id}/${m.slug || m.id}`
+    : `${basePath}/${courseSlug}/${m.slug || m.id}`;
   const getLessonPath = (sc: any, m: any, l: any) => sc
-    ? `/courses/${courseSlug}/${sc.slug || sc.id}/${m.slug || m.id}/${l.slug || l.id}`
-    : `/courses/${courseSlug}/${m.slug || m.id}/${l.slug || l.id}`;
+    ? `${basePath}/${courseSlug}/${sc.slug || sc.id}/${m.slug || m.id}/${l.slug || l.id}`
+    : `${basePath}/${courseSlug}/${m.slug || m.id}/${l.slug || l.id}`;
 
   return (
     <div className="space-y-6">
@@ -264,25 +297,41 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
             >
               <ChevronLeft className="w-6 h-6 text-slate-400" />
             </button>
-            <Link 
-              to={`/courses/${courseSlug}`}
-              className="text-left hover:bg-slate-50 p-2 rounded-2xl transition-all"
-            >
-              <h1 className="text-lg lg:text-2xl font-black text-slate-900 line-clamp-1">{course?.title}</h1>
-              <div className="flex items-center gap-3 mt-1">
-                <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                  <LayoutGrid className="w-3 h-3" />
-                  {allModules.length} Units
+            <div className="flex items-center gap-2">
+              <Link 
+                to={`${basePath}/${courseSlug}`}
+                className="text-left hover:bg-slate-50 p-2 rounded-2xl transition-all block"
+              >
+                <div className="flex items-center gap-3">
+                  <h1 className="text-lg lg:text-2xl font-black text-slate-900 line-clamp-1">{course?.title}</h1>
                 </div>
-                <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(Object.values(progress).filter(Boolean).length / (allLessons.length || 1)) * 100}%` }}
-                    className="h-full bg-indigo-600"
-                  />
+                <div className="flex items-center gap-3 mt-1">
+                  <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                    <LayoutGrid className="w-3 h-3" />
+                    {allModules.length} Units
+                  </div>
+                  <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(Object.values(progress).filter(Boolean).length / (allLessons.length || 1)) * 100}%` }}
+                      className="h-full bg-indigo-600"
+                    />
+                  </div>
                 </div>
-              </div>
-            </Link>
+              </Link>
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    setEditTarget({ type: 'course', data: course });
+                    setIsEditModalOpen(true);
+                  }}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-all"
+                  title="Edit Course Details"
+                >
+                  <SettingsIcon className="w-5 h-5 text-slate-400 hover:text-indigo-600" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 lg:pb-0" ref={unitScrollRef}>
@@ -603,8 +652,25 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
                    <X className="cursor-pointer" onClick={() => setIsEditModalOpen(false)} />
                 </div>
                 <form onSubmit={handleSaveEdit} className="space-y-4">
-                   <input type="text" value={editTarget.data.title} onChange={e => setEditTarget({...editTarget, data: {...editTarget.data, title: e.target.value}})} className="w-full p-2 border rounded" />
-                   <button type="submit" disabled={savingEdit} className="w-full bg-indigo-600 text-white p-2 rounded">Save</button>
+                   <div>
+                     <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+                     <input type="text" value={editTarget.data.title || ''} onChange={e => setEditTarget({...editTarget, data: {...editTarget.data, title: e.target.value}})} className="w-full p-2 border rounded border-slate-300" required />
+                   </div>
+                   {editTarget.type === 'course' && (
+                     <>
+                       <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                         <textarea value={editTarget.data.description || ''} onChange={e => setEditTarget({...editTarget, data: {...editTarget.data, description: e.target.value}})} className="w-full p-2 border rounded border-slate-300" rows={3} />
+                       </div>
+                       <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-1">Image URL</label>
+                         <input type="url" value={editTarget.data.img_url || ''} onChange={e => setEditTarget({...editTarget, data: {...editTarget.data, img_url: e.target.value}})} className="w-full p-2 border rounded border-slate-300" />
+                       </div>
+                     </>
+                   )}
+                   <button type="submit" disabled={savingEdit} className="w-full bg-indigo-600 font-bold hover:bg-indigo-700 transition-colors text-white p-3 rounded-xl disabled:opacity-50">
+                     {savingEdit ? 'Saving...' : 'Save Changes'}
+                   </button>
                 </form>
              </div>
           </div>
