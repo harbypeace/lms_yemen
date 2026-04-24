@@ -21,6 +21,12 @@ export const AuthPage: React.FC = () => {
   const [role, setRole] = useState<'student' | 'parent'>('student');
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (user && !authLoading) {
+      window.location.href = redirectPath || '/';
+    }
+  }, [user, authLoading, redirectPath]);
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -31,18 +37,15 @@ export const AuthPage: React.FC = () => {
       const trimmedUsername = username.trim();
 
       // Basic validation to prevent common mistakes
-      if (isStudentLogin && trimmedUsername.includes('@')) {
-        throw new Error('Student ID should not contain an "@" symbol. Please use the "Email Login" tab for email addresses.');
-      }
       if (!isStudentLogin && !isLogin && trimmedEmail.includes(' ') ) {
         throw new Error('Email address should not contain spaces.');
       }
 
       // For students without email, we use a dummy domain suffix
-      // This allows them to use Supabase Auth (which requires an email)
-      // while only typing their username in the UI.
+      // If they enter an email address in the Student ID field (contains @), 
+      // we gracefully handle it and use it directly.
       const finalEmail = isStudentLogin 
-        ? `${trimmedUsername.toLowerCase()}@nexus-internal.com` 
+        ? (trimmedUsername.includes('@') ? trimmedUsername : `${trimmedUsername.toLowerCase()}@nexus-internal.com`) 
         : trimmedEmail;
 
       console.log('Attempting auth with:', { isLogin, isStudentLogin, finalEmail, role });
@@ -56,6 +59,8 @@ export const AuthPage: React.FC = () => {
         // If there's a redirect query parameter, use it
         if (redirectPath) {
           window.location.href = redirectPath;
+        } else {
+          window.location.href = '/';
         }
       } else {
         // Basic validation

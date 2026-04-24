@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Routes, Route, Link } from 'react-router-dom';
-import { Book, ChevronRight, Plus, Search, X, Loader2, GraduationCap, CheckCircle, Zap, Lock } from 'lucide-react';
+import { Book, ChevronRight, Plus, Search, X, Loader2, GraduationCap, CheckCircle, Zap, Lock, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { CourseViewer } from './CourseViewer';
+import { AICourseGenerator } from './AICourseGenerator';
 
 export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled = false }) => {
   const { activeTenant, user, memberships, enrollments, setEnrollments } = useAuth();
@@ -13,6 +14,7 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAIGenModalOpen, setIsAIGenModalOpen] = useState(false);
   const [newCourse, setNewCourse] = useState<{title: string, description: string, img_url: string, slug: string, prerequisites: string[]}>({ title: '', description: '', img_url: '', slug: '', prerequisites: [] });
   const [creating, setCreating] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
@@ -242,6 +244,13 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
               {isAdminOrTeacher && !onlyEnrolled && (
                 <div className="flex items-center gap-3">
                   <button 
+                    onClick={() => setIsAIGenModalOpen(true)}
+                    className="bg-purple-100 text-purple-700 px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-purple-200 transition-all shadow-sm"
+                  >
+                    <Sparkles className="w-5 h-5 text-purple-600" />
+                    AI Architect
+                  </button>
+                  <button 
                     onClick={handleGenerateDemo}
                     disabled={generatingDemo}
                     className="bg-emerald-100 text-emerald-700 px-4 py-2 rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-200 transition-all disabled:opacity-50"
@@ -411,6 +420,38 @@ export const CourseList: React.FC<{ onlyEnrolled?: boolean }> = ({ onlyEnrolled 
           <CourseViewer onBack={() => navigate(onlyEnrolled ? '/my-courses' : '/courses')} />
         } />
       </Routes>
+
+      {/* Create Course Modal */}
+      <AnimatePresence>
+        {isAIGenModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAIGenModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-8 border border-slate-200"
+            >
+              <button 
+                onClick={() => setIsAIGenModalOpen(false)}
+                className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-lg transition-all"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+              <AICourseGenerator 
+                onSuccess={() => fetchCourses()} 
+                onClose={() => setIsAIGenModalOpen(false)} 
+              />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Create Course Modal */}
       <AnimatePresence>

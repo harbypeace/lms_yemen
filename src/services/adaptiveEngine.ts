@@ -34,25 +34,49 @@ export const adaptiveEngine = {
 
       const plan = sub?.plan_name || 'free';
 
-      // 3. Get Latest Performance for THIS lesson's quiz
-      const { data: quiz } = await supabase
-        .from('quizzes')
-        .select('quiz_id')
-        .eq('lesson_id', currentLessonId)
-        .maybeSingle();
-
+      // 3. Get Latest Performance from activities or quizzes
       let score = 0;
-      if (quiz) {
-        const { data: lastAttempt } = await supabase
-          .from('quiz_submissions')
-          .select('score, passed')
+      
+      // Check activity_progress first (new system)
+      const { data: qAct } = await supabase
+        .from('activities')
+        .select('id')
+        .eq('parent_id', currentLessonId)
+        .eq('parent_type', 'lesson')
+        // Filter by quiz type if joined
+        .single(); // Simplified for now, in reality might check activity_types
+
+      if (qAct) {
+        const { data: actProg } = await supabase
+          .from('activity_progress')
+          .select('score')
           .eq('user_id', userId)
-          .eq('quiz_id', quiz.quiz_id)
-          .order('submitted_at', { ascending: false })
-          .limit(1)
+          .eq('activity_id', qAct.id)
           .maybeSingle();
         
-        score = lastAttempt?.score || 0;
+        if (actProg?.score !== undefined) score = actProg.score;
+      }
+
+      // Fallback/Overlap with old system
+      if (score === 0) {
+        const { data: quiz } = await supabase
+          .from('quizzes')
+          .select('quiz_id')
+          .eq('lesson_id', currentLessonId)
+          .maybeSingle();
+
+        if (quiz) {
+          const { data: lastAttempt } = await supabase
+            .from('quiz_submissions')
+            .select('score, passed')
+            .eq('user_id', userId)
+            .eq('quiz_id', quiz.quiz_id)
+            .order('submitted_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          
+          score = lastAttempt?.score || 0;
+        }
       }
 
       // 4. Check Branching Rules

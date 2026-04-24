@@ -31,6 +31,7 @@ import { ProgressTracker } from '../components/ProgressTracker';
 import { ParentDashboard } from '../components/ParentDashboard';
 import { PermissionsDebugger } from '../components/PermissionsDebugger';
 import { SchoolManagement } from '../components/SchoolManagement';
+import { SchoolSettings } from '../components/SchoolSettings';
 import { Settings } from '../components/Settings';
 import { GamificationWidget } from '../components/GamificationWidget';
 import { GlobalLeaderboard } from '../components/GlobalLeaderboard';
@@ -64,6 +65,7 @@ export const Dashboard: React.FC = () => {
     if (path.startsWith('/progress')) return 'progress';
     if (path.startsWith('/children')) return 'children';
     if (path.startsWith('/schools')) return 'schools';
+    if (path.startsWith('/school-settings')) return 'school-settings';
     if (path.startsWith('/settings')) return 'settings';
     if (path.startsWith('/leaderboard')) return 'leaderboard';
     if (path.startsWith('/user-management')) return 'user-management';
@@ -338,6 +340,16 @@ export const Dashboard: React.FC = () => {
               />
             </>
           )}
+          {(activeRole === 'school_admin' || activeRole === 'super_admin') && (
+            <>
+              <SidebarItem 
+                icon={Building2} 
+                label="School Settings" 
+                active={activeTab === 'school-settings'} 
+                onClick={() => handleTabChange('school-settings')}
+              />
+            </>
+          )}
           <SidebarItem 
             icon={SettingsIcon} 
             label="Settings" 
@@ -608,6 +620,7 @@ export const Dashboard: React.FC = () => {
             } />
 
             <Route path="/schools" element={<SchoolManagement />} />
+            <Route path="/school-settings" element={<SchoolSettings />} />
             <Route path="/courses/*" element={<CourseList />} />
             <Route path="/my-courses/*" element={<CourseList onlyEnrolled />} />
             <Route path="/members" element={<MemberList />} />

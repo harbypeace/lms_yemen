@@ -312,16 +312,25 @@ async function startServer() {
     const userId = req.user.id;
 
     try {
-      // Verify Super Admin status in General tenant
-      const { data: memberships } = await supabaseAdmin
+      // Verify Admin status in General tenant OR the specific tenant
+      const { data: generalMembership } = await supabaseAdmin
         .from('memberships')
         .select('*, tenants!inner(*)')
         .eq('user_id', userId)
         .eq('tenants.slug', 'general')
-        .eq('role', 'super_admin');
+        .eq('role', 'super_admin')
+        .maybeSingle();
 
-      if (!memberships || memberships.length === 0) {
-        return res.status(403).json({ error: 'Unauthorized: Only General Super Admins can manage schools' });
+      const { data: tenantMembership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('tenant_id', schoolId)
+        .in('role', ['super_admin', 'school_admin'])
+        .maybeSingle();
+
+      if (!generalMembership && !tenantMembership) {
+        return res.status(403).json({ error: 'Unauthorized: Only Admins can manage this school' });
       }
 
       const { data, error } = await supabaseAdmin
@@ -482,7 +491,7 @@ async function startServer() {
       }
 
       // 2. Create user in Supabase Auth
-      const dummyEmail = `${username.toLowerCase()}@nexus-internal.com`;
+      const dummyEmail = username.includes('@') ? username : `${username.toLowerCase()}@nexus-internal.com`;
       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email: dummyEmail,
         password: password,
