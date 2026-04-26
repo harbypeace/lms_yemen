@@ -2,11 +2,13 @@
 
 Welcome to the Adaptive Learning Platform repository. This is a multi-tenant React application built with an Express backend, using Supabase (PostgreSQL) and the Gemini API to deliver AI-generated courses, gamification mechanics, and adaptive learning experiences.
 
-## Technical Stack
+## Tech Stack & Features
 - **Frontend**: React 19, Vite, Tailwind CSS
 - **Backend**: Express (running via `server.ts` with vite middleware)
 - **Database**: Supabase (PostgreSQL with RLS)
-- **AI**: Google Gemini API integration
+- **AI**: Google Gemini API for curriculum generation (support for Grade and Subject tailoring)
+- **Learning Experience**: Distraction-free learning mode, contextual course leaderboards, and advanced course filtering.
+- **Gamification**: XP system, Hearts (lives), Gems, and global student progress tracking.
 
 ## Quick Start
 1. Ensure your `.env` is configured with Supabase and Gemini keys (refer to `.env.example`).

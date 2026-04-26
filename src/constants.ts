@@ -14,6 +14,10 @@ export const GRADES = [
 ];
 
 export const SUBJECTS = [
+  'Quran',
+  'Islamic Education',
+  'Arabic',
+  'English',
   'Mathematics',
   'Science',
   'Physics',
@@ -21,9 +25,23 @@ export const SUBJECTS = [
   'Biology',
   'History',
   'Geography',
-  'Arabic',
-  'English',
+  'Philosophy',
+  'Social Studies',
+  'General Science',
   'Computer Science',
   'Art',
-  'Music'
+  'Music',
+  'القرآن الكريم',
+  'التربية الإسلامية',
+  'اللغة العربية',
+  'الرياضيات',
+  'الدراسات الاجتماعية',
+  'العلوم العامة',
+  'الكيمياء',
+  'الفيزياء',
+  'الأحياء',
+  'التاريخ',
+  'الجغرافيا',
+  'الفلسفة',
+  'الإنجليزية'
 ];

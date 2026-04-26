@@ -1744,8 +1744,8 @@ async function startServer() {
       const { data, error } = await query.limit(50);
 
       if (error) {
-        // If the table doesn't exist, just return an empty array for now.
-        if (error.code === 'PGRST205') {
+        // If the table doesn't exist or relationship is missing, just return an empty array for now.
+        if (error.code === 'PGRST205' || error.code === 'PGRST200') {
           return res.json({ success: true, statements: [] });
         }
         throw error;
@@ -2013,13 +2013,37 @@ async function startServer() {
     
     try {
       // Get course by slug or ID
-      const { data: course, error: courseError } = await supabaseAdmin
-        .from('courses')
-        .select('*')
-        .or(`slug.eq.${slug},id.eq.${slug}`)
-        .single();
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+      
+      let query = supabaseAdmin.from('courses').select('*');
+      if (isUUID) {
+        query = query.or(`slug.eq.${slug},id.eq.${slug}`);
+      } else {
+        query = query.eq('slug', slug);
+      }
+      
+      let { data: course, error: courseError } = await query.single();
 
-      if (courseError || !course) return res.status(404).json({ error: "Course not found" });
+      // If not found in courses, check if it's a subcourse ID
+      if (!course) {
+        const { data: subCourse } = await supabaseAdmin
+          .from('sub_courses')
+          .select('course_id')
+          .eq('id', slug)
+          .single();
+        
+        if (subCourse) {
+          const { data: parentCourse } = await supabaseAdmin
+            .from('courses')
+            .select('*')
+            .eq('id', subCourse.course_id)
+            .single();
+          course = parentCourse;
+          courseError = null; // Clear the previous error since we found it
+        }
+      }
+
+      if (!course) return res.status(404).json({ error: "Course not found" });
 
       // Fetch permissions for this course
       const { data: permissions } = await supabaseAdmin

@@ -46,11 +46,13 @@ The system relies on a multi-tenant (Schools) architecture using Row Level Secur
   1. Login as a Teacher or Admin.
   2. Navigate to "Courses" or "My Courses".
   3. Click "AI Architect" and input a topic (e.g., "Intro to Physics").
-  4. Watch the progress bar as the frontend hits Gemini and constructs modules, lessons, and multi-media activities.
+  4. Optionally select a **Grade** and **Subject** to tailor the content.
+  5. Watch the progress bar as the frontend hits Gemini and constructs modules, lessons, and multi-media activities.
 - **Gamification Mechanics**:
   1. Login as a Student.
   2. Complete an activity inside a lesson.
-  3. Verify that XP increases, hearts and gems are updated, and check the "Leaderboard" tab for progress.
+  3. Verify that XP increases, hearts and gems are updated.
+  4. Open a course and navigate to the **Leaderboard** tab to check your ranking relative to other students in that specific course.
 - **Adaptive Engine**:
   1. Complete a quiz to test out the adaptive branching engine.
   2. If the score is low, verify that you are redirected to remedial modules depending on the rules present in the `adaptive_branching_rules` table.

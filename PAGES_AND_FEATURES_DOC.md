@@ -29,13 +29,15 @@ This document provides a systematic breakdown of every page and feature within t
 - **Location**: `src/components/CourseList.tsx`
 - **Features**:
   - Browse available courses.
-  - Search and filter by category/tag.
+  - Search and filter by Grade and Subject.
   - Enroll in courses.
   - **AI Architect Button**: Triggers AI generation for admins/teachers.
 
 ### 2.2 Course Player (`/courses/:slug`)
 - **Location**: `src/components/CourseViewer.tsx`
 - **Features**:
+  - **Distraction-Free Mode**: Automatically hides dashboard navigation when entering learning mode.
+  - **Tabbed Navigation**: Switch between **Curriculum (Syllabus)** and **Course Leaderboard** within the context of the course.
   - Multi-module and multi-lesson navigation.
   - Progress persistence.
   - **LearningContent.tsx**: Dynamic activity renderer.
@@ -57,8 +59,8 @@ This document provides a systematic breakdown of every page and feature within t
 - **Component**: `src/components/AICourseGenerator.tsx`
 - **Service**: `src/services/geminiService.ts`
 - **Features**:
-  - User enters a topic (e.g., "Advanced Algebra").
-  - Google Gemini generates a full curriculum: Modules -> Lessons -> Actual HTML Content & Quizzes.
+  - User enters a topic, optional **Grade**, and optional **Subject**.
+  - Google Gemini generates a full curriculum tailored to the specific grade and subject: Modules -> Lessons -> Actual HTML Content & Quizzes.
   - One-click deployment to the database.
 
 ---
@@ -72,6 +74,7 @@ This document provides a systematic breakdown of every page and feature within t
   - **Hearts (Lives)**: Depleted on quiz errors, regrow over time or via Gems.
   - **Gems (Currency)**: Earned for streaks and achievements.
   - **Badges**: Milestone-based rewards.
+  - **Student Progress Tracker**: Visual overview of XP, hearts, and gems on the main dashboard.
 
 ### 4.2 Social Hub (`/social`)
 - **Component**: `src/components/SocialHub.tsx`
@@ -80,10 +83,11 @@ This document provides a systematic breakdown of every page and feature within t
   - Interactive student social wall.
   - Discussion forums for specific lessons.
 
-### 4.3 Leaderboards (`/leaderboard`)
-- **Components**: `GlobalLeaderboard.tsx`, `CourseLeaderboard.tsx`
+### 4.3 Leaderboards
+- **Components**: `CourseLeaderboard.tsx`
 - **Features**:
-  - Monthly and all-time rankings.
+  - **Contextual Rankings**: Leaderboards are now integrated directly into course pages, showing rankings relative to students in the same course.
+  - XP-based rankings.
   - League system (Bronze, Silver, Gold).
 
 ---

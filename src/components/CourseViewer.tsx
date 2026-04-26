@@ -510,10 +510,10 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
                 )}
 
                 {viewLevel === 'course' && (
-                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="flex items-center gap-1 p-1 bg-slate-50 border border-slate-100 rounded-2xl w-fit">
                       {[
-                        { id: 'syllabus', label: 'Syllabus', icon: Book },
+                        { id: 'syllabus', label: 'Curriculum', icon: Book },
                         { id: 'leaderboard', label: 'Leaderboard', icon: Trophy }
                       ].map((tab: any) => (
                         <button
@@ -537,59 +537,74 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -10 }}
-                          className="space-y-8"
+                          className="space-y-12"
                         >
-                          <div className="flex items-center justify-between">
-                            <h3 className="text-2xl font-black text-slate-900">Curriculum</h3>
-                            <div className="text-sm font-bold text-slate-500">
-                              {allLessons.length} Total Lessons
-                            </div>
-                          </div>
-
-                          <div className="grid gap-4">
-                            {directModules.map((module, mIdx) => (
-                              <div key={module.id} className="bg-slate-50 rounded-3xl p-6 border border-slate-100 hover:border-indigo-200 transition-all group">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div className="flex gap-4">
-                                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 font-black shadow-sm group-hover:scale-110 transition-transform">
-                                      {mIdx + 1}
-                                    </div>
-                                    <div className="space-y-1">
-                                      <h4 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{module.title}</h4>
-                                      <div className="flex items-center gap-3">
-                                        <span className="text-xs font-medium text-slate-500">{module.lessons.length} Lessons</span>
-                                        <div className="w-1 h-1 bg-slate-300 rounded-full" />
-                                        <span className="text-xs font-bold text-indigo-600">
-                                          {Math.round((module.lessons.filter((l: any) => progress[l.id]).length / (module.lessons.length || 1)) * 100)}% Complete
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <button 
-                                    onClick={() => {
-                                      setActiveModuleId(module.id);
-                                      const firstLesson = module.lessons[0];
-                                      if (firstLesson) navigate(getLessonPath(null, module, firstLesson));
-                                    }}
-                                    className="p-2 bg-white rounded-xl shadow-sm hover:shadow-md transition-all text-slate-400 hover:text-indigo-600"
-                                  >
-                                    <ChevronRight className="w-5 h-5" />
-                                  </button>
-                                </div>
+                          {/* Sub-courses Collection */}
+                          {subCourses.length > 0 && (
+                            <section className="space-y-6">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-2xl font-black text-slate-900">Learning Paths</h3>
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{subCourses.length} Segments</span>
                               </div>
-                            ))}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {subCourses.map((sc) => {
+                                  const totalLessons = sc.modules.reduce((acc: number, m: any) => acc + m.lessons.length, 0);
+                                  const completedLessons = sc.modules.reduce((acc: number, m: any) => acc + m.lessons.filter((l: any) => progress[l.id]).length, 0);
+                                  const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+                                  
+                                  return (
+                                    <Link 
+                                      key={sc.id} 
+                                      to={getSubCoursePath(sc)}
+                                      className="group bg-white p-8 rounded-[2rem] border border-slate-200 hover:border-indigo-200 transition-all shadow-sm hover:shadow-xl hover:shadow-indigo-100/50 flex flex-col gap-6"
+                                    >
+                                      <div className="flex items-start justify-between">
+                                        <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
+                                          <Layers className="w-8 h-8" />
+                                        </div>
+                                        <div className="flex flex-col items-end">
+                                          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full">Unit</span>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="space-y-2">
+                                        <h4 className="text-xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{sc.title}</h4>
+                                        <p className="text-sm text-slate-500 line-clamp-2">{sc.metadata?.description || `Explore ${sc.title} and master the core concepts.`}</p>
+                                      </div>
 
-                            {subCourses.map((sc) => (
-                              <div key={sc.id} className="space-y-4">
-                                <div className="flex items-center gap-2 px-2">
-                                  <Layers className="w-4 h-4 text-indigo-600" />
-                                  <span className="text-xs font-black uppercase tracking-widest text-indigo-600">{sc.title}</span>
-                                </div>
-                                {sc.modules.map((module: any, mIdx: number) => (
-                                  <div key={module.id} className="bg-white rounded-3xl p-6 border border-slate-200 hover:border-indigo-200 transition-all group shadow-sm">
+                                      <div className="mt-auto space-y-4">
+                                        <div className="flex justify-between items-center text-xs font-bold">
+                                          <span className="text-slate-400 uppercase tracking-widest">{totalLessons} Lessons</span>
+                                          <span className="text-indigo-600">{progressPercent}%</span>
+                                        </div>
+                                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                          <motion.div 
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${progressPercent}%` }}
+                                            className="h-full bg-indigo-600 rounded-full"
+                                          />
+                                        </div>
+                                      </div>
+                                    </Link>
+                                  );
+                                })}
+                              </div>
+                            </section>
+                          )}
+
+                          {/* Direct Modules (if any) */}
+                          {directModules.length > 0 && (
+                            <section className="space-y-6">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-2xl font-black text-slate-900">Modules</h3>
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{directModules.length} Modules</span>
+                              </div>
+                              <div className="grid gap-4">
+                                {directModules.map((module, mIdx) => (
+                                  <div key={module.id} className="bg-slate-50 rounded-3xl p-6 border border-slate-100 hover:border-indigo-200 transition-all group">
                                     <div className="flex items-start justify-between gap-4">
                                       <div className="flex gap-4">
-                                        <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 font-black group-hover:scale-110 transition-transform">
+                                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 font-black shadow-sm group-hover:scale-110 transition-transform">
                                           {mIdx + 1}
                                         </div>
                                         <div className="space-y-1">
@@ -606,11 +621,10 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
                                       <button 
                                         onClick={() => {
                                           setActiveModuleId(module.id);
-                                          setActiveSubCourseId(sc.id);
                                           const firstLesson = module.lessons[0];
-                                          if (firstLesson) navigate(getLessonPath(sc, module, firstLesson));
+                                          if (firstLesson) navigate(getLessonPath(null, module, firstLesson));
                                         }}
-                                        className="p-2 bg-slate-50 rounded-xl hover:bg-white border border-transparent hover:border-slate-200 transition-all text-slate-400 hover:text-indigo-600"
+                                        className="p-2 bg-white rounded-xl shadow-sm hover:shadow-md transition-all text-slate-400 hover:text-indigo-600"
                                       >
                                         <ChevronRight className="w-5 h-5" />
                                       </button>
@@ -618,8 +632,8 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
                                   </div>
                                 ))}
                               </div>
-                            ))}
-                          </div>
+                            </section>
+                          )}
                         </motion.div>
                       ) : (
                         <motion.div 
@@ -691,6 +705,79 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
                             permissions={permissions}
                             courseId={course?.id}
                           />
+                        )}
+
+                        {viewLevel === 'subcourse' && activeTab === 'content' && selectedSubCourse?.modules?.length > 0 && (
+                          <div className="mt-12 space-y-6 pt-8 border-t-2 border-slate-100">
+                            <h3 className="text-2xl font-black text-slate-900">Modules in this Path</h3>
+                            <div className="grid gap-4">
+                              {selectedSubCourse.modules.map((module: any, mIdx: number) => (
+                                <div key={module.id} className="bg-slate-50 rounded-3xl p-6 border border-slate-100 hover:border-indigo-200 transition-all group">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex gap-4">
+                                      <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 font-black shadow-sm group-hover:scale-110 transition-transform">
+                                        {mIdx + 1}
+                                      </div>
+                                      <div className="space-y-1">
+                                        <h4 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{module.title}</h4>
+                                        <div className="flex items-center gap-3">
+                                          <span className="text-xs font-medium text-slate-500">{module.lessons?.length || 0} Lessons</span>
+                                          {module.lessons?.length > 0 && (
+                                            <>
+                                              <div className="w-1 h-1 bg-slate-300 rounded-full" />
+                                              <span className="text-xs font-bold text-indigo-600">
+                                                {Math.round((module.lessons.filter((l: any) => progress[l.id]).length / module.lessons.length) * 100)}% Complete
+                                              </span>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <button 
+                                      onClick={() => {
+                                        setActiveModuleId(module.id);
+                                        const firstLesson = module.lessons?.[0];
+                                        if (firstLesson) navigate(getLessonPath(selectedSubCourse, module, firstLesson));
+                                      }}
+                                      className="p-2 bg-white rounded-xl shadow-sm hover:shadow-md transition-all text-slate-400 hover:text-indigo-600"
+                                    >
+                                      <ChevronRight className="w-5 h-5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {viewLevel === 'unit' && activeTab === 'content' && selectedModule?.lessons?.length > 0 && (
+                          <div className="mt-12 space-y-6 pt-8 border-t-2 border-slate-100">
+                            <h3 className="text-2xl font-black text-slate-900">Lessons in this Module</h3>
+                            <div className="grid gap-4">
+                              {selectedModule.lessons.map((lesson: any, lIdx: number) => (
+                                <Link 
+                                  key={lesson.id}
+                                  to={getLessonPath(selectedSubCourse, selectedModule, lesson)}
+                                  className="bg-slate-50 rounded-3xl p-6 border border-slate-100 hover:border-indigo-200 transition-all group flex items-start justify-between gap-4"
+                                >
+                                  <div className="flex gap-4">
+                                    <div className={cn(
+                                      "w-12 h-12 rounded-2xl flex items-center justify-center font-black shadow-sm transition-transform group-hover:scale-110",
+                                      progress[lesson.id] ? "bg-emerald-100 text-emerald-600" : "bg-white text-indigo-600"
+                                    )}>
+                                      {progress[lesson.id] ? <CheckCircle className="w-6 h-6" /> : lIdx + 1}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <h4 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{lesson.title}</h4>
+                                    </div>
+                                  </div>
+                                  <div className="p-2 bg-white rounded-xl shadow-sm hover:shadow-md transition-all text-slate-400 hover:text-indigo-600">
+                                    <ChevronRight className="w-5 h-5" />
+                                  </div>
+                                </Link>
+                              ))}
+                            </div>
+                          </div>
                         )}
 
                         {viewLevel === 'lesson' && activeTab === 'quiz' && selectedLesson && <QuizViewer targetId={selectedLesson.id} targetType="lesson" />}

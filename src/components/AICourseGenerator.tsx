@@ -66,68 +66,94 @@ export const AICourseGenerator: React.FC<AICourseGeneratorProps> = ({ onSuccess,
       const { data: types } = await supabase.from('activity_types').select('*');
       const typeMap = (types || []).reduce((acc: any, t) => ({ ...acc, [t.name]: t.id }), {});
 
-      // 3. Iterate through Modules
-      for (let mIdx = 0; mIdx < courseStructure.modules.length; mIdx++) {
-        const moduleData = courseStructure.modules[mIdx];
-        setStatus(`Creating module: ${moduleData.title}`);
-        
-        const moduleResponse = await fetch('/api/modules', {
+      // 3. Iterate through Sub-courses
+      for (let scIdx = 0; scIdx < (courseStructure.subCourses || []).length; scIdx++) {
+        const scData = courseStructure.subCourses[scIdx];
+        setStatus(`Creating Sub-course: ${scData.title}`);
+
+        const scResponse = await fetch('/api/sub-courses', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({
-            title: moduleData.title,
+            title: scData.title,
             courseId,
             tenantId: activeTenant.id,
-            orderIndex: mIdx
+            orderIndex: scIdx,
+            metadata: { description: scData.description }
           })
         });
 
-        const moduleResult = await moduleResponse.json();
-        if (!moduleResult.success) throw new Error(moduleResult.error);
-        const moduleId = moduleResult.module.id;
+        const scResult = await scResponse.json();
+        if (!scResult.success) throw new Error(scResult.error);
+        const subCourseId = scResult.subCourse.id;
 
-        // 4. Iterate through Lessons
-        for (let lIdx = 0; lIdx < moduleData.lessons.length; lIdx++) {
-          const lessonData = moduleData.lessons[lIdx];
+        // 4. Iterate through Modules within Sub-course
+        for (let mIdx = 0; mIdx < scData.modules.length; mIdx++) {
+          const moduleData = scData.modules[mIdx];
+          setStatus(`Creating module: ${moduleData.title}`);
           
-          const lessonResponse = await fetch('/api/lessons', {
+          const moduleResponse = await fetch('/api/modules', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${session.access_token}`
             },
             body: JSON.stringify({
-              title: lessonData.title,
-              moduleId,
+              title: moduleData.title,
+              subCourseId,
+              courseId,
               tenantId: activeTenant.id,
-              orderIndex: lIdx
+              orderIndex: mIdx
             })
           });
 
-          const lessonResult = await lessonResponse.json();
-          if (!lessonResult.success) throw new Error(lessonResult.error);
-          const lessonId = lessonResult.lesson.id;
+          const moduleResult = await moduleResponse.json();
+          if (!moduleResult.success) throw new Error(moduleResult.error);
+          const moduleId = moduleResult.module.id;
 
-          // 5. Create Activities
-          for (let aIdx = 0; aIdx < lessonData.activities.length; aIdx++) {
-            const act = lessonData.activities[aIdx];
+          // 5. Iterate through Lessons
+          for (let lIdx = 0; lIdx < moduleData.lessons.length; lIdx++) {
+            const lessonData = moduleData.lessons[lIdx];
             
-            await supabase.from('activities').insert({
-              parent_id: lessonId,
-              parent_type: 'lesson',
-              type_id: typeMap[act.type],
-              title: act.title,
-              data: act.data,
-              order_index: aIdx
+            const lessonResponse = await fetch('/api/lessons', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+              },
+              body: JSON.stringify({
+                title: lessonData.title,
+                moduleId,
+                tenantId: activeTenant.id,
+                orderIndex: lIdx
+              })
             });
+
+            const lessonResult = await lessonResponse.json();
+            if (!lessonResult.success) throw new Error(lessonResult.error);
+            const lessonId = lessonResult.lesson.id;
+
+            // 6. Create Activities
+            for (let aIdx = 0; aIdx < lessonData.activities.length; aIdx++) {
+              const act = lessonData.activities[aIdx];
+              
+              await supabase.from('activities').insert({
+                parent_id: lessonId,
+                parent_type: 'lesson',
+                type_id: typeMap[act.type],
+                title: act.title,
+                data: act.data,
+                order_index: aIdx
+              });
+            }
           }
         }
         
         // Update progress incrementally
-        setProgress(40 + (mIdx + 1) * (60 / courseStructure.modules.length));
+        setProgress(40 + (scIdx + 1) * (60 / courseStructure.subCourses.length));
       }
 
       setStatus('Course generation complete!');

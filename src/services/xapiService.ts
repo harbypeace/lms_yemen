@@ -94,9 +94,17 @@ class XApiLiteService {
   }
 
   async getPublic(activityId?: string) {
-    const url = activityId ? `/api/xapi/public?activityId=${encodeURIComponent(activityId)}` : '/api/xapi/public';
-    const response = await fetch(url);
-    return response.json();
+    try {
+      const url = activityId ? `/api/xapi/public?activityId=${encodeURIComponent(activityId)}` : '/api/xapi/public';
+      const response = await fetch(url);
+      if (!response.ok) {
+        return { success: true, statements: [] };
+      }
+      return response.json();
+    } catch (err) {
+      console.warn('XApi getPublic failed:', err);
+      return { success: true, statements: [] };
+    }
   }
 }
 

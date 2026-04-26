@@ -1,15 +1,27 @@
 import { createClient } from '@supabase/supabase-js'
 
 const getSupabaseConfig = () => {
-  const meta = import.meta as any;
-  const env = meta.env || (typeof process !== 'undefined' ? process.env : {});
+  const isBrowser = typeof window !== 'undefined';
   
-  const url = env.VITE_SUPABASE_URL;
-  const key = env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_KEY;
+  // Use explicit import.meta.env for Vite static replacement in the browser
+  let url = '';
+  let key = '';
+  
+  if (isBrowser) {
+    // @ts-ignore
+    url = import.meta.env.VITE_SUPABASE_URL || '';
+    // @ts-ignore
+    key = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_KEY || '';
+  } else {
+    // Backend/Node usage
+    const processEnv = typeof process !== 'undefined' ? process.env : {};
+    url = processEnv.VITE_SUPABASE_URL || '';
+    key = processEnv.VITE_SUPABASE_ANON_KEY || processEnv.VITE_SUPABASE_KEY || '';
+  }
   
   // Default fallback values
   const defaultUrl = 'https://okpruwomwojoshrbdewg.supabase.co';
-  const defaultKey = ''; // Should be provided via env
+  const defaultKey = 'sb_publishable_2DaEOu1x78bzJPOkz-lGKA_DNXRfe6v';
   
   const finalUrl = (url && url.startsWith('http')) ? url : defaultUrl;
   const finalKey = key || defaultKey;
