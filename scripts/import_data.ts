@@ -67,7 +67,15 @@ async function run() {
     .filter(m => !EXCLUDE_COURSE_IDS.includes(m.parent_id))
     .map(m => {
       const courseId = scMap.get(m.parent_id) || m.parent_id;
-      const subCourseId = scMap.has(m.parent_id) ? m.parent_id : null;
+      let subCourseId = scMap.has(m.parent_id) ? m.parent_id : null;
+      
+      // If we don't have a subCourseId, try to find one for this course
+      if (!subCourseId) {
+        const entry = Array.from(scMap.entries()).find(([scId, cId]) => cId === courseId);
+        if (entry) {
+          subCourseId = entry[0];
+        }
+      }
       return {
         id: m.id,
         course_id: courseId,

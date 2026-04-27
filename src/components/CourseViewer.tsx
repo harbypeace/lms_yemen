@@ -704,6 +704,8 @@ export const CourseViewer: React.FC<CourseViewerProps> = ({ onBack }) => {
                             onComplete={(score) => selectedLesson && toggleLessonCompletion(selectedLesson.id, score)}
                             permissions={permissions}
                             courseId={course?.id}
+                            subCourseSlug={subCourseSlug}
+                            lessonSlug={lessonSlug}
                           />
                         )}
 

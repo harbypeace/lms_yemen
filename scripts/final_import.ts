@@ -17,7 +17,15 @@ const EXCLUDE_IDS = new Set([
 ]);
 
 async function run() {
-  console.log('Starting full data import...');
+  console.log('Starting full data import with clean-up...');
+
+  // 0. Clean tables
+  console.log('Cleaning tables...');
+  await supabase.from('activity_progress').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  await supabase.from('activities').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  await supabase.from('lessons').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  await supabase.from('modules').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  console.log('Clean-up complete.');
 
   // 1. Get subcourse to course mapping
   const { data: subCourses } = await supabase.from('sub_courses').select('id, course_id');
@@ -54,10 +62,14 @@ async function run() {
   for (const m of modules) {
     if (EXCLUDE_IDS.has(m[1] as string)) continue;
     
+    // m[1] is parent_id which is expected to be sub_course_id
+    const subCourseId = m[1];
+    const courseId = scMap.get(subCourseId);
+
     await supabase.from('modules').upsert({
       id: m[0],
-      sub_course_id: m[1],
-      course_id: scMap.get(m[1]),
+      sub_course_id: subCourseId,
+      course_id: courseId,
       title: m[2],
       order_index: m[3]
     });

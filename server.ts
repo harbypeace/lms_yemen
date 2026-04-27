@@ -2,6 +2,8 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 
@@ -661,6 +663,183 @@ async function startServer() {
       console.error('Error enrolling:', err);
       const errorMessage = err.message || err.error_description || 'Unknown error during enrollment';
       res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // GDrive Asset Sync Endpoint
+  app.post('/api/sync/gdrive', authenticateUser, async (req: any, res: any) => {
+    const { folderId, googleAccessToken } = req.body;
+    const userId = req.user.id;
+
+    try {
+      // 1. Verify user is super_admin
+      const { data: superAdminMembership } = await supabaseAdmin
+        .from('memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('role', 'super_admin');
+
+      if (!superAdminMembership || superAdminMembership.length === 0) {
+        return res.status(403).json({ error: 'Unauthorized: Super Admin access required' });
+      }
+
+      if (!folderId || !googleAccessToken) {
+        return res.status(400).json({ error: 'Folder ID and Google Access Token are required.' });
+      }
+
+      const logs: string[] = [];
+      const staticDir = path.join(__dirname, 'public', 'static-courses');
+      
+      // Ensure root directory exists
+      if (!fs.existsSync(staticDir)) {
+        await fsPromises.mkdir(staticDir, { recursive: true });
+        logs.push(`Created directory: ${staticDir}`);
+      }
+
+      // Recursive download function
+      const downloadFolder = async (folderId: string, currentPath: string) => {
+        const driveApiUrl = `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&fields=files(id,name,mimeType)`;
+        const listResponse = await fetch(driveApiUrl, {
+          headers: { 'Authorization': `Bearer ${googleAccessToken}` }
+        });
+
+        if (!listResponse.ok) {
+          throw new Error(`GDrive API returned ${listResponse.status}: ${await listResponse.text()}`);
+        }
+
+        const listData = await listResponse.json();
+        const files = listData.files || [];
+        logs.push(`Found ${files.length} items in folder ${folderId}.`);
+
+        for (const file of files) {
+          if (file.mimeType === 'application/vnd.google-apps.folder') {
+            const newPath = path.join(currentPath, file.name);
+            if (!fs.existsSync(newPath)) {
+              await fsPromises.mkdir(newPath, { recursive: true });
+              logs.push(`Created directory: ${newPath}`);
+            }
+            await downloadFolder(file.id, newPath);
+            continue;
+          }
+
+          // Only download common web assets for static courses
+          const allowedExts = ['.html', '.htm', '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.json'];
+          const ext = path.extname(file.name).toLowerCase();
+          
+          if (!allowedExts.includes(ext) && file.mimeType !== 'text/html') {
+            logs.push(`Skipping unsupported file type: ${file.name}`);
+            continue;
+          }
+
+          logs.push(`Downloading: ${file.name} to ${currentPath.replace(__dirname, '')}...`);
+          
+          const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+          const fileResponse = await fetch(downloadUrl, {
+            headers: { 'Authorization': `Bearer ${googleAccessToken}` }
+          });
+
+          if (!fileResponse.ok) {
+            logs.push(`FAILED to download ${file.name}`);
+            continue;
+          }
+
+          const buffer = await fileResponse.arrayBuffer();
+          const destPath = path.join(currentPath, file.name);
+          await fsPromises.writeFile(destPath, Buffer.from(buffer));
+          logs.push(`SAVED: ${file.name}`);
+        }
+      };
+
+      // Start recursive sync
+      await downloadFolder(folderId, staticDir);
+
+      res.json({ success: true, logs });
+    } catch (err: any) {
+      console.error('GDrive Sync Route Error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GDrive Sync Verification Endpoint
+  app.get('/api/sync/verify', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) return res.status(401).json({ error: 'No authorization header' });
+      
+      const token = authHeader.split(' ')[1];
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      
+      if (authError || !user) return res.status(401).json({ error: 'Invalid token' });
+
+      // Check if user is super_admin
+      const { data: membership } = await supabase
+        .from('tenant_memberships')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'super_admin')
+        .single();
+
+      if (!membership) {
+        // Fallback check on memberships table if tenant_memberships is not the right one
+        // Based on other routes, it uses 'memberships'
+        const { data: membershipAlt } = await supabase
+          .from('memberships')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('role', 'super_admin')
+          .single();
+          
+        if (!membershipAlt) {
+          return res.status(403).json({ error: 'Only super admins can verify sync' });
+        }
+      }
+
+      const { data: subCourses } = await supabase
+        .from('sub_courses')
+        .select('id, title, slug');
+
+      const staticBaseDir = path.join(process.cwd(), 'public', 'static-courses');
+      
+      if (!fs.existsSync(staticBaseDir)) {
+        return res.json({ success: true, results: [] });
+      }
+
+      const results = [];
+
+      for (const sc of subCourses || []) {
+        const scDir = path.join(staticBaseDir, sc.slug || sc.id);
+        const hasFolder = fs.existsSync(scDir);
+        const structPath = path.join(scDir, 'structure.json');
+        const hasStructure = fs.existsSync(structPath);
+        
+        let structureInfo = 'Missing';
+        let lessonCount = 0;
+        if (hasStructure) {
+          try {
+            const content = fs.readFileSync(structPath, 'utf-8');
+            const json = JSON.parse(content);
+            lessonCount = Object.keys(json.lessons || {}).length;
+            structureInfo = `Found (${lessonCount} lessons)`;
+          } catch (e) {
+            structureInfo = 'Invalid JSON';
+          }
+        }
+
+        results.push({
+          id: sc.id,
+          title: sc.title,
+          slug: sc.slug,
+          hasFolder,
+          structure: structureInfo,
+          lessonCount
+        });
+      }
+
+      res.json({ success: true, results });
+
+    } catch (err: any) {
+      console.error('Verify error:', err);
+      res.status(500).json({ error: err.message });
     }
   });
 

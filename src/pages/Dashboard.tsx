@@ -50,6 +50,7 @@ import { formatRelativeTime } from '../lib/utils';
 import { IntegrationManager } from '../components/IntegrationManager';
 import { SocialHub } from '../components/SocialHub';
 import { LearningContentDemo } from '../components/LearningContentDemo';
+import { GDriveAssetSync } from '../components/GDriveAssetSync';
 
 
 export const Dashboard: React.FC = () => {
@@ -73,6 +74,7 @@ export const Dashboard: React.FC = () => {
     if (path.startsWith('/bulk-import')) return 'bulk-import';
     if (path.startsWith('/subscriptions')) return 'subscriptions';
     if (path.startsWith('/integrations')) return 'integrations';
+    if (path.startsWith('/asset-sync')) return 'asset-sync';
     if (path.startsWith('/system-users')) return 'system-users';
     if (path.startsWith('/social')) return 'social';
     if (path.startsWith('/demo')) return 'demo';
@@ -291,12 +293,20 @@ export const Dashboard: React.FC = () => {
                 onClick={() => handleTabChange('user-management')}
               />
               {(activeRole === 'super_admin' || activeRole === 'school_admin') && (
-                <SidebarItem 
-                  icon={Share2} 
-                  label="Integrations" 
-                  active={activeTab === 'integrations'} 
-                  onClick={() => handleTabChange('integrations')}
-                />
+                <>
+                  <SidebarItem 
+                    icon={Share2} 
+                    label="Integrations" 
+                    active={activeTab === 'integrations'} 
+                    onClick={() => handleTabChange('integrations')}
+                  />
+                  <SidebarItem 
+                    icon={Upload} 
+                    label="Asset Sync (GDrive)" 
+                    active={activeTab === 'asset-sync'} 
+                    onClick={() => handleTabChange('asset-sync')}
+                  />
+                </>
               )}
               {activeRole === 'super_admin' && (
                 <SidebarItem 
@@ -661,6 +671,7 @@ export const Dashboard: React.FC = () => {
             <Route path="/children" element={<ManagedUsers />} />
             <Route path="/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/integrations" element={<IntegrationManager />} />
+            <Route path="/asset-sync" element={<GDriveAssetSync />} />
             <Route path="/system-users" element={<GlobalUserManagement />} />
             <Route path="/social" element={<SocialHub />} />
             <Route path="/demo" element={<LearningContentDemo />} />

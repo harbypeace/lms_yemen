@@ -13,10 +13,13 @@ import {
   Link as LinkIcon,
   Video,
   Layout,
-  Layers
+  Layers,
+  Maximize,
+  Minimize
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { useRef } from 'react';
 
 import { useAuth } from '../context/AuthContext';
 
@@ -29,6 +32,8 @@ interface LearningContentProps {
   lessonIndex?: number;
   courseId?: string;
   permissions?: any[];
+  subCourseSlug?: string;
+  lessonSlug?: string;
 }
 
 type ActivityCategory = 'all' | 'video' | 'html' | 'questions' | 'resources';
@@ -41,10 +46,14 @@ export const LearningContent: React.FC<LearningContentProps> = ({
   unitIndex, 
   lessonIndex,
   courseId,
-  permissions = []
+  permissions = [],
+  subCourseSlug,
+  lessonSlug
 }) => {
   const { user, memberships, activeTenant } = useAuth();
   const myRole = memberships.find(m => m.tenant_id === activeTenant?.id)?.role;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const [activities, setActivities] = useState<any[]>([]);
   const [staticContent, setStaticContent] = useState<string | null>(null);
@@ -57,24 +66,49 @@ export const LearningContent: React.FC<LearningContentProps> = ({
 
   useEffect(() => {
     fetchActivities();
-    if (targetType === 'lesson' && unitIndex !== undefined && lessonIndex !== undefined) {
-      checkStaticContent(unitIndex, lessonIndex);
+    if (targetType === 'lesson') {
+      checkDynamicStaticContent();
     } else {
       setStaticContent(null);
     }
-  }, [targetId, targetType, unitIndex, lessonIndex]);
+  }, [targetId, targetType, unitIndex, lessonIndex, subCourseSlug, lessonSlug]);
 
-  const checkStaticContent = async (uIdx: number, lIdx: number) => {
+  const checkDynamicStaticContent = async () => {
     try {
-      const fileName = `u${uIdx + 1}l${lIdx + 1}.html`;
-      const response = await fetch(`/static-courses/${fileName}`);
-      if (response.ok) {
-        const html = await response.text();
-        setStaticContent(html);
-      } else {
-        setStaticContent(null);
+      // 1. Try to find if there's a structure.json in the subcourse folder
+      if (subCourseSlug) {
+        const structResponse = await fetch(`/static-courses/${subCourseSlug}/structure.json`);
+        if (structResponse.ok) {
+          const structure = await structResponse.json();
+          // Find the file for this lesson in the structure
+          // It could be indexed by slug or id
+          const fileName = structure.lessons?.[lessonSlug || ''] || structure.lessons?.[targetId];
+          
+          if (fileName) {
+            const contentResponse = await fetch(`/static-courses/${subCourseSlug}/${fileName}`);
+            if (contentResponse.ok) {
+              const html = await contentResponse.text();
+              setStaticContent(html);
+              return;
+            }
+          }
+        }
       }
+
+      // 2. Fallback to old u1l1.html pattern if indices are provided
+      if (unitIndex !== undefined && lessonIndex !== undefined) {
+        const fileName = `u${unitIndex + 1}l${lessonIndex + 1}.html`;
+        const response = await fetch(`/static-courses/${fileName}`);
+        if (response.ok) {
+          const html = await response.text();
+          setStaticContent(html);
+          return;
+        }
+      }
+
+      setStaticContent(null);
     } catch (err) {
+      console.error('Error checking static content:', err);
       setStaticContent(null);
     }
   };
@@ -136,6 +170,29 @@ export const LearningContent: React.FC<LearningContentProps> = ({
       setActiveCategory('all');
     }
   };
+
+  const toggleFullScreen = () => {
+    if (!containerRef.current) return;
+    
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const categories = useMemo(() => {
     const counts = {
@@ -211,7 +268,7 @@ export const LearningContent: React.FC<LearningContentProps> = ({
       {/* Activity Type Toolbar */}
       <div className="flex bg-white p-1 rounded-2xl border border-slate-200 overflow-x-auto no-scrollbar shadow-sm sticky top-0 z-10">
         {tabItems.map((tab) => (
-          categories[tab.id] > 0 || tab.id === 'all' ? (
+          (categories[tab.id] > 0 || (tab.id === 'html' && staticContent) || tab.id === 'all') ? (
             <button
               key={tab.id}
               onClick={() => setActiveCategory(tab.id)}
@@ -228,41 +285,50 @@ export const LearningContent: React.FC<LearningContentProps> = ({
                 "text-[10px] px-1.5 py-0.5 rounded-full ml-1",
                 activeCategory === tab.id ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
               )}>
-                {categories[tab.id]}
+                {categories[tab.id] + (tab.id === 'html' && staticContent ? 1 : 0)}
               </span>
             </button>
           ) : null
         ))}
       </div>
 
-      {/* Static Lesson Content */}
-      {staticContent && (activeCategory === 'all' || activeCategory === 'html') && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
-        >
-          <div className="bg-indigo-600 px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <BookOpen className="w-4 h-4 text-white" />
-              <span className="text-sm font-bold text-white uppercase tracking-wider">
-                Static Lesson File
-              </span>
-            </div>
-          </div>
-          <div className="aspect-[4/3] w-full bg-white">
-            <iframe
-              srcDoc={staticContent}
-              className="w-full h-full border-0"
-              title="Static Lesson Content"
-            />
-          </div>
-        </motion.div>
-      )}
-
       <div className="space-y-8 pb-20">
         <AnimatePresence mode="wait">
-          {filteredActivities.length === 0 ? (
+          {/* Static Lesson Content - Only show in Overview or Lessons tab */}
+          {staticContent && (activeCategory === 'all' || activeCategory === 'html') && (
+            <motion.div
+              key="static-content"
+              ref={containerRef}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={cn(
+                "bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col",
+                isFullscreen ? "fixed inset-0 z-[9999] rounded-none border-none" : "border-slate-200"
+              )}
+            >
+              <div className="bg-indigo-600 px-6 py-3 flex items-center justify-between font-bold text-white uppercase tracking-wider text-xs">
+                <div className="flex items-center gap-3">
+                  <BookOpen className="w-4 h-4" />
+                  <span>{isFullscreen ? 'Full Screen Mode' : 'Primary Lesson Document'}</span>
+                </div>
+                <button
+                  onClick={toggleFullScreen}
+                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                </button>
+              </div>
+              <div className={cn("bg-white", isFullscreen ? "flex-1" : "aspect-[4/3] w-full")}>
+                <iframe
+                  srcDoc={staticContent}
+                  className="w-full h-full border-0"
+                  title="Static Lesson Content"
+                />
+              </div>
+            </motion.div>
+          )}
+
+          {filteredActivities.length === 0 && (!staticContent || activeCategory !== 'html') ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
